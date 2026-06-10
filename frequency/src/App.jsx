@@ -41,6 +41,7 @@ export default function App() {
 
     const radio = new Radio();
     radioRef.current = radio;
+    window.__radio = radio; // debug handle
     setMuted(radio.isMuted());
 
     f.onFreq((mhz) => { if (freqRef.current) freqRef.current.textContent = mhz.toFixed(1); });
@@ -163,6 +164,7 @@ export default function App() {
           <div className="intro-foot">
             <button className="linklike" onClick={openJournal}>your constellation</button>
             <span className="fineprint">headphones &amp; a quiet minute recommended</span>
+            <span className="fineprint credits">music: "chill lofi inspired" · omfgdude &amp; qubodup · cc0</span>
           </div>
         </div>
       </Screen>

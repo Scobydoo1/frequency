@@ -191,6 +191,7 @@ body {
 .tonight em { color: var(--them); font-style: italic; text-transform: none; letter-spacing: .02em; }
 
 .intro-foot { display: grid; gap: 12px; justify-items: center; margin-top: 2px; }
+.credits { opacity: .32; font-size: 9.5px; }
 .linklike {
   background: none; border: none; cursor: pointer;
   font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;

@@ -39,8 +39,12 @@ npx vercel --prod    # deploy client + serverless functions to Vercel free tier
 - `App.jsx` — screen flow: intro → tuning → locked → give → constellation.
 - `api.js` — backend client with timeouts and an offline fallback so the game is
   always playable.
-- `sound.js` — WebAudio radio: drone + static that cleans into a carrier tone as
-  you lock on, plus a lock chime. Mute is persisted. No audio files.
+- `sound.js` — the radio: a lofi music bed through a warm lowpass (ducks while a
+  lock charges) over a synthesized drone + static that cleans into a carrier tone
+  as you lock on, plus a soft lock chime. Mute is persisted.
+  Music: "Chill lofi inspired" by omfgdude, seamless loop edit by qubodup —
+  CC0 / public domain, from [OpenGameArt](https://opengameart.org/content/chill-lofi-inspired-loop-edit).
+  OGG for Chrome/Android, MP3 fallback for iOS; cached at runtime for offline play.
 - `journal.js` — localStorage record of your encounters (never leaves the device).
 - `content.js` — frontend helpers incl. the date-seeded nightly prompt.
 

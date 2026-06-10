@@ -24,6 +24,17 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // music is fetched on demand and then kept for offline play
+        runtimeCaching: [
+          {
+            urlPattern: /\/audio\/.*\.(?:mp3|ogg)$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "frequency-audio",
+              expiration: { maxEntries: 4 },
+            },
+          },
+        ],
       },
     }),
   ],
