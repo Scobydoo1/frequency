@@ -1,51 +1,61 @@
-/* FREQUENCY — UI layer (React). Owns screens; drives the canvas engine. */
+/* FREQUENCY — UI layer (React). Owns screens; drives the canvas engine, the
+ * radio sound, the signal backend, and the local journal. */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FrequencyField } from "./engine/field-engine.js";
-import { PROMPTS, PALETTE, STRANGER_COUNT, MOTION, fmtCount, seededInt, agoFor } from "./content.js";
+import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt } from "./content.js";
+import { fetchSignals, submitSignal, reportSignal, fmtCount } from "./api.js";
+import { Radio } from "./sound.js";
+import { loadJournal, addEncounter, formatWhen } from "./journal.js";
 
 export default function App() {
+  const tonight = nightlyPrompt();
   const [screen, setScreen] = useState("intro"); // intro|tuning|locked|give|constellation
-  const [prompt, setPrompt] = useState(PROMPTS[0]);
-  const [assigned, setAssigned] = useState([]); // messages per stranger index
-  const [seed, setSeed] = useState(1);
-  const [revealMsg, setRevealMsg] = useState("");
-  const [revealAgo, setRevealAgo] = useState("");
+  const [prompt, setPrompt] = useState(tonight);
+  const [assigned, setAssigned] = useState([]); // signal object per stranger index
+  const [count, setCount] = useState(0);
+  const [reveal, setReveal] = useState({ text: "", ago: "", id: "", real: false });
+  const [reported, setReported] = useState(false);
   const [myMsg, setMyMsg] = useState("");
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("searching");
+  const [muted, setMuted] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [journal, setJournal] = useState([]);
+  const [sent, setSent] = useState({ persisted: false, done: false });
+  const [shareNote, setShareNote] = useState("");
 
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
+  const radioRef = useRef(null);
   const freqRef = useRef(null);
-  const screenRef = useRef(screen);
-  screenRef.current = screen;
-
-  // refs to read latest inside engine callbacks
+  const screenRef = useRef(screen); screenRef.current = screen;
   const assignedRef = useRef(assigned); assignedRef.current = assigned;
-  const seedRef = useRef(seed); seedRef.current = seed;
   const statusRef = useRef("searching");
 
-  /* init engine once */
+  /* init engine + radio once */
   useEffect(() => {
     const f = new FrequencyField(canvasRef.current);
     fieldRef.current = f;
     window.__fld = f; // debug handle
     f.setConfig({ ...PALETTE, strangerCount: STRANGER_COUNT, motion: MOTION });
-    f.onFreq((mhz) => {
-      if (freqRef.current) freqRef.current.textContent = mhz.toFixed(1);
-    });
+
+    const radio = new Radio();
+    radioRef.current = radio;
+    setMuted(radio.isMuted());
+
+    f.onFreq((mhz) => { if (freqRef.current) freqRef.current.textContent = mhz.toFixed(1); });
     f.onProgress((p, near) => {
+      radio.tune(p, near);
       const s = near ? (p > 0.85 ? "locking" : "signal detected") : "searching";
-      if (s !== statusRef.current) {
-        statusRef.current = s;
-        setStatus(s);
-      }
+      if (s !== statusRef.current) { statusRef.current = s; setStatus(s); }
     });
     f.onLock((stranger) => {
       if (screenRef.current !== "tuning") return;
-      const msg = assignedRef.current[stranger.id] || "—";
-      setRevealMsg(msg);
-      setRevealAgo(agoFor(stranger.id, seedRef.current));
+      const sig = assignedRef.current[stranger.id] || { text: "—", ago: "", id: "", real: false };
+      setReveal(sig);
+      setReported(false);
+      radio.chime();
+      radio.silenceStatic();
       setTimeout(() => {
         if (fieldRef.current) fieldRef.current.confirmLock();
         setScreen("locked");
@@ -55,45 +65,76 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const beginTuning = useCallback(() => {
-    const p = PROMPTS[Math.floor(Math.random() * PROMPTS.length)];
-    const newSeed = Math.floor(Math.random() * 1e6) + 1;
-    // shuffle messages by seed for variety
-    const pool = [...p.messages];
-    const shuffled = [];
-    let s = newSeed;
-    while (pool.length) {
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
-      shuffled.push(pool.splice(s % pool.length, 1)[0]);
-    }
+  const beginTuning = useCallback(async () => {
+    radioRef.current?.start();
+    const p = nightlyPrompt();
     setPrompt(p);
-    setAssigned(shuffled);
-    setSeed(newSeed);
-    setStatus("searching");
-    statusRef.current = "searching";
+    setStatus("searching"); statusRef.current = "searching";
+    // fetch tonight's real (or curated) signals
+    const data = await fetchSignals(p, STRANGER_COUNT);
+    setAssigned(data.messages);
+    setCount(data.count);
+    const newSeed = Math.floor(Math.random() * 1e6) + 1;
     fieldRef.current.startTuning(newSeed);
     setScreen("tuning");
   }, []);
 
-  const goConstellation = useCallback(() => {
-    setMyMsg(draft.trim() || "…");
+  const goConstellation = useCallback(async () => {
+    const mine = draft.trim();
+    const finalMsg = mine || "…";
+    setMyMsg(finalMsg);
+    setSent({ persisted: false, done: false });
     fieldRef.current.enterConstellation();
     setScreen("constellation");
-  }, [draft]);
+    // record locally always; submit to the world only if the player wrote something
+    setJournal(addEncounter({ promptLabel: prompt.label, received: reveal.text, given: mine }));
+    if (mine) {
+      const res = await submitSignal(prompt, mine);
+      setSent({ persisted: !!res.persisted, done: true });
+    } else {
+      setSent({ persisted: false, done: true });
+    }
+  }, [draft, prompt, reveal.text]);
+
+  const onReport = useCallback(async () => {
+    setReported(true);
+    if (reveal.id) await reportSignal(prompt, reveal.id);
+  }, [prompt, reveal.id]);
 
   const playAgain = useCallback(() => {
-    setDraft("");
-    setMyMsg("");
-    setRevealMsg("");
+    setDraft(""); setMyMsg(""); setReveal({ text: "", ago: "", id: "", real: false });
+    setShareNote("");
     fieldRef.current.reset();
+    radioRef.current?.silenceStatic();
     setScreen("intro");
   }, []);
 
-  const tuneCount = fmtCount(900 + seededInt(prompt.id.length + seed, 120, 1800));
+  const openJournal = useCallback(() => { setJournal(loadJournal()); setJournalOpen(true); }, []);
+
+  const toggleMute = useCallback(() => {
+    radioRef.current?.start();
+    setMuted(radioRef.current?.toggleMute() ?? false);
+  }, []);
+
+  const share = useCallback(async () => {
+    const text = `Tonight on FREQUENCY, a stranger said: "${reveal.text}"`;
+    const url = location.origin;
+    try {
+      if (navigator.share) { await navigator.share({ title: "FREQUENCY", text, url }); return; }
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setShareNote("copied to clipboard");
+      setTimeout(() => setShareNote(""), 2200);
+    } catch { /* dismissed */ }
+  }, [reveal.text]);
 
   return (
     <div className="stage">
       <canvas ref={canvasRef} className="field" />
+
+      {/* mute toggle — always available */}
+      <button className="mute" onClick={toggleMute} aria-label={muted ? "unmute" : "mute"}>
+        {muted ? "♪̸ sound off" : "♪ sound on"}
+      </button>
 
       {/* persistent frequency HUD during tuning */}
       <div className={"hud " + (screen === "tuning" ? "on" : "")}>
@@ -117,8 +158,12 @@ export default function App() {
             Drift through the dark until your signals meet — then leave a trace
             for whoever comes next.
           </p>
+          <div className="tonight">tonight everyone is tuned to <em>{prompt.label}</em></div>
           <button className="btn primary" onClick={beginTuning}>tune in</button>
-          <div className="fineprint">headphones &amp; a quiet minute recommended</div>
+          <div className="intro-foot">
+            <button className="linklike" onClick={openJournal}>your constellation</button>
+            <span className="fineprint">headphones &amp; a quiet minute recommended</span>
+          </div>
         </div>
       </Screen>
 
@@ -133,10 +178,13 @@ export default function App() {
       <Screen show={screen === "locked"}>
         <div className="reveal">
           <div className="kicker">YOU FOUND SOMEONE · {prompt.label}</div>
-          <blockquote className="msg">“{revealMsg}”</blockquote>
-          <div className="attr">— a stranger, {revealAgo}</div>
+          <blockquote className="msg">“{reveal.text}”</blockquote>
+          <div className="attr">— a stranger{reveal.ago ? `, ${reveal.ago}` : ""}</div>
           <button className="btn primary" onClick={() => setScreen("give")}>
             leave your signal
+          </button>
+          <button className="report" onClick={onReport} disabled={reported}>
+            {reported ? "thank you — signal flagged" : "report this signal"}
           </button>
         </div>
       </Screen>
@@ -167,24 +215,55 @@ export default function App() {
       <Screen show={screen === "constellation"}>
         <div className="finale">
           <div className="kicker">YOU'RE PART OF IT NOW</div>
-          <div className="count">{tuneCount}</div>
+          <div className="count">{fmtCount(count)}</div>
           <div className="count-sub">people have tuned to “{prompt.label}” tonight</div>
           <div className="pair">
             <div className="pair-row them">
               <span className="dot them-dot"></span>
-              <span className="pair-msg">“{revealMsg}”</span>
+              <span className="pair-msg">“{reveal.text}”</span>
             </div>
             <div className="pair-row you">
               <span className="dot you-dot"></span>
               <span className="pair-msg">“{myMsg}”</span>
             </div>
           </div>
+          {sent.done && myMsg !== "…" && (
+            <div className="sent-note">
+              {sent.persisted ? "your signal is out there now — someone will find it" : "your signal echoed into the dark"}
+            </div>
+          )}
           <div className="finale-actions">
             <button className="btn primary" onClick={beginTuning}>tune again</button>
+            <button className="btn ghost" onClick={share}>share</button>
             <button className="btn ghost" onClick={playAgain}>back to start</button>
           </div>
+          {shareNote && <div className="share-note">{shareNote}</div>}
         </div>
       </Screen>
+
+      {/* JOURNAL overlay */}
+      {journalOpen && (
+        <div className="journal-overlay" onClick={(e) => { if (e.target.classList.contains("journal-overlay")) setJournalOpen(false); }}>
+          <div className="journal">
+            <div className="kicker">YOUR CONSTELLATION</div>
+            <p className="journal-sub">every stranger you've found, and what you left them.</p>
+            {journal.length === 0 ? (
+              <p className="journal-empty">No encounters yet. Tune in to begin.</p>
+            ) : (
+              <div className="journal-list">
+                {journal.map((e, i) => (
+                  <div className="journal-entry" key={i}>
+                    <div className="journal-when">{formatWhen(e.ts)} · {e.promptLabel}</div>
+                    {e.received && <div className="journal-recv">“{e.received}”</div>}
+                    {e.given && <div className="journal-given">you: “{e.given}”</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn ghost" onClick={() => setJournalOpen(false)}>close</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -172,7 +172,72 @@ body {
 .pair-msg { font-size: clamp(16px, 2.4vw, 21px); font-weight: 300; font-style: italic; color: var(--ink); }
 .finale-actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
 
+/* mute toggle */
+.mute {
+  position: absolute; top: 22px; right: 22px; z-index: 6;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em;
+  text-transform: lowercase; color: var(--ink-dim);
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+  transition: color .25s, border-color .25s, opacity .25s; opacity: .7;
+}
+.mute:hover { color: var(--ink); border-color: rgba(255,255,255,.32); opacity: 1; }
+
+/* tonight teaser on intro */
+.tonight {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-dim); opacity: .8;
+}
+.tonight em { color: var(--them); font-style: italic; text-transform: none; letter-spacing: .02em; }
+
+.intro-foot { display: grid; gap: 12px; justify-items: center; margin-top: 2px; }
+.linklike {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--them); opacity: .85; transition: opacity .25s; padding: 2px;
+}
+.linklike:hover { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
+
+/* report link on reveal */
+.report {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-dim); opacity: .4; transition: opacity .25s, color .25s; padding: 4px; margin-top: -8px;
+}
+.report:hover:not(:disabled) { opacity: .8; color: var(--them); }
+.report:disabled { cursor: default; opacity: .55; color: var(--them); }
+
+/* finale notes */
+.sent-note, .share-note {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--them); opacity: .8; margin-top: 4px;
+}
+
+/* journal overlay */
+.journal-overlay {
+  position: fixed; inset: 0; z-index: 10;
+  background: rgba(5,4,13,.78); backdrop-filter: blur(8px);
+  display: grid; place-items: center; padding: 28px;
+  animation: fadein .35s ease;
+}
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.journal {
+  width: min(92vw, 560px); max-height: 84vh; overflow: auto;
+  background: rgba(20,18,42,.6); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px; padding: 30px; display: grid; gap: 14px;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.7);
+}
+.journal-sub { font-size: 15px; font-weight: 300; font-style: italic; color: var(--ink-dim); }
+.journal-empty { font-size: 16px; font-style: italic; color: var(--ink-dim); padding: 16px 0; }
+.journal-list { display: grid; gap: 12px; }
+.journal-entry { padding: 14px 16px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.06); text-align: left; }
+.journal-when { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); opacity: .7; margin-bottom: 6px; }
+.journal-recv { font-size: 17px; font-weight: 300; font-style: italic; color: #fff; }
+.journal-given { font-size: 14px; font-weight: 300; font-style: italic; color: var(--you); margin-top: 5px; }
+.journal .btn { justify-self: center; margin-top: 6px; }
+
 @media (max-width: 600px) {
   .prompt-banner { bottom: 58px; }
   .hud { top: 16px; }
+  .mute { top: 14px; right: 14px; }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seededInt, agoFor, PROMPTS } from "../src/content.js";
+import { seededInt, agoFor, PROMPTS, nightlyPrompt } from "../src/content.js";
 
 describe("seededInt", () => {
   it("always stays within [lo, hi] (Math.imul sign regression)", () => {
@@ -24,5 +24,20 @@ describe("content", () => {
   });
   it("agoFor returns a phrase", () => {
     expect(typeof agoFor(0, 1)).toBe("string");
+  });
+});
+
+describe("nightlyPrompt", () => {
+  it("is stable within a day and is one of the prompts", () => {
+    const d = new Date("2026-06-10T20:00:00Z");
+    const a = nightlyPrompt(d);
+    const b = nightlyPrompt(new Date("2026-06-10T23:30:00Z"));
+    expect(a.id).toBe(b.id);
+    expect(PROMPTS.map((p) => p.id)).toContain(a.id);
+  });
+  it("rotates across days", () => {
+    const ids = new Set();
+    for (let i = 0; i < 30; i++) ids.add(nightlyPrompt(new Date(Date.UTC(2026, 5, 1 + i))).id);
+    expect(ids.size).toBeGreaterThan(1);
   });
 });
