@@ -29,17 +29,24 @@ prompt, leave your own — signed or anonymous — for whoever comes next.
                    │ HTTPS (same origin)
 ┌──────────────────▼──────────────  Vercel  ─────────────────────────────┐
 │  /api/signals  GET  random signals + tuned-tonight count per prompt    │
-│                POST moderated message {text ≤90, name ≤24 | null}      │
+│                POST moderated message; identity server-resolved from   │
+│                     the session (showName → callsign, else anonymous)  │
+│  /api/auth     GET me · POST register/login/logout (callsign accounts, │
+│                     scrypt hashes, HMAC cookie sessions, no email)     │
+│  /api/friends  GET friends+requests · POST request/accept/decline/rm   │
 │  /api/report   POST flag a signal by id (removes it)                   │
 │  /api/health   GET  { ok, persisted } → "broadcast: live | echo"       │
 │        │                                                               │
 │  _lib/moderation.js  pure: sanitize, moderate(text), moderateName      │
-│  _lib/store.js       adapter: Vercel Blob when BLOB_READ_WRITE_TOKEN   │
+│  _lib/auth.js        pure: scrypt, HMAC tokens, callsign validation    │
+│  _lib/store.js       adapter: Vercel Blob (token or OIDC store id)     │
 │  _lib/seeds.js       curated seed messages (fallback + topping-up)     │
 │        │                                                               │
 │  Vercel Blob store "frequency-signals"                                 │
-│    signals/<promptId>.json → { messages:[{id,text,name,ts}],           │
-│                                submissions }                           │
+│    signals/<promptId>.json   → { messages:[{id,text,name,ts}], subs }  │
+│    users/<callsign>.json     → account + presence (owner-written only) │
+│    freqreq/<to>/<from>.json  → friend request (unique path, no races)  │
+│    friendsof/<a>/<b>.json    → friendship edge + mirror                │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -104,6 +111,16 @@ npx vercel deploy --prod --yes   # deploy (run from frequency/)
   Next deploy flips `/api/health` to `persisted:true` ("broadcast: live").
 - **Service worker note:** after a deploy, an already-open client serves the
   previous shell until its next load.
+
+## Identity & privacy invariants (v5)
+
+- Message identity is **server-resolved**: the client sends only a boolean
+  (`showName`); the name attached is always the session's callsign, so
+  impersonation is impossible.
+- Anonymous posts stay anonymous **everywhere**: they update a friend-visible
+  "last tuned" only, never the friend-visible last signal.
+- Accounts hold no email or PII — a callsign and a scrypt password hash.
+  There is no recovery flow by design.
 
 ## Known trade-off: last-writer-wins per prompt
 

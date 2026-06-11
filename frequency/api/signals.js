@@ -30,7 +30,9 @@ export default async function handler(req, res) {
       const name = body.showName && callsign ? callsign : null;
       const { id, persisted } = await addSignal(prompt, verdict.text, name);
       if (callsign) {
-        await touchUser(callsign, { text: verdict.text, promptId: prompt, t: Date.now() });
+        // anonymous posts stay anonymous everywhere: friends see your last
+        // *signed* signal only; presence (last tuned) updates either way
+        await touchUser(callsign, name ? { text: verdict.text, promptId: prompt, t: Date.now() } : null);
       }
       return res.status(200).json({ ok: true, id, persisted, text: verdict.text, name });
     }
