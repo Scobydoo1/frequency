@@ -1,12 +1,14 @@
-/* GET  /api/signals?prompt=<id>&n=7  → { messages:[{id,text,name,ago,real}], count }
- * POST /api/signals  { prompt, text, name? }  → { ok, id, persisted } | { ok:false, reason }
- *   name is an optional signature (≤24 chars, moderated); absent/empty = anonymous.
+/* GET  /api/signals?prompt=<id>&n=7  → { messages:[{id,text,name,ago,ageDays,real}], count }
+ * POST /api/signals  { prompt, text, showName? }  → { ok, id, persisted, name } | { ok:false, reason }
+ *   Identity is server-resolved: showName=true attaches the session's callsign.
+ *   Guests (no session) always post anonymously — impersonation is impossible.
  *
  * Vercel serverless function (Node runtime). Persists to Vercel Blob when wired,
  * otherwise serves curated seeds — always returns a playable payload.
  */
-import { getSignals, addSignal } from "./_lib/store.js";
-import { moderate, moderateName } from "./_lib/moderation.js";
+import { getSignals, addSignal, touchUser } from "./_lib/store.js";
+import { moderate } from "./_lib/moderation.js";
+import { sessionFromReq } from "./_lib/auth.js";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -24,10 +26,13 @@ export default async function handler(req, res) {
       const prompt = body.prompt;
       const verdict = moderate(body.text);
       if (!verdict.ok) return res.status(200).json({ ok: false, reason: verdict.reason });
-      const nameVerdict = moderateName(body.name);
-      if (!nameVerdict.ok) return res.status(200).json({ ok: false, reason: nameVerdict.reason });
-      const { id, persisted } = await addSignal(prompt, verdict.text, nameVerdict.name);
-      return res.status(200).json({ ok: true, id, persisted, text: verdict.text, name: nameVerdict.name });
+      const callsign = sessionFromReq(req, process.env.SESSION_SECRET);
+      const name = body.showName && callsign ? callsign : null;
+      const { id, persisted } = await addSignal(prompt, verdict.text, name);
+      if (callsign) {
+        await touchUser(callsign, { text: verdict.text, promptId: prompt, t: Date.now() });
+      }
+      return res.status(200).json({ ok: true, id, persisted, text: verdict.text, name });
     }
 
     res.setHeader("Allow", "GET, POST");

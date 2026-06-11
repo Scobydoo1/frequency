@@ -6,6 +6,7 @@ import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack, paletteFo
 import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
 import { loadJournal, addEncounter, formatWhen, starPosition } from "./journal.js";
+import { me, register, login, logout, getFriends, friendAction, lastTunedLabel } from "./auth.js";
 
 /* the page chrome follows the field's palette */
 function applyCssPalette(pal) {
@@ -34,10 +35,22 @@ export default function App() {
   const [tone, setTone] = useState(40);
   const [sent, setSent] = useState({ persisted: false, done: false, note: "" });
   const [shareNote, setShareNote] = useState("");
-  const [sigName, setSigName] = useState(() => {
-    try { return localStorage.getItem("frequency.name.v1") || ""; } catch { return ""; }
-  });
   const [broadcast, setBroadcast] = useState(null); // null | "live" | "echo"
+
+  /* ----- the social layer: callsigns + friends ----- */
+  const [user, setUser] = useState(null);            // { callsign } | null
+  const [authAvailable, setAuthAvailable] = useState(false);
+  const [authMode, setAuthMode] = useState("claim"); // claim | signin
+  const [csDraft, setCsDraft] = useState("");
+  const [pwDraft, setPwDraft] = useState("");
+  const [authErr, setAuthErr] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [showName, setShowName] = useState(() => {
+    try { return localStorage.getItem("frequency.showname.v1") !== "0"; } catch { return true; }
+  });
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const [social, setSocial] = useState({ friends: [], requests: [] });
+  const [friendReq, setFriendReq] = useState(""); // "", "sent", or an error note
 
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -73,6 +86,7 @@ export default function App() {
       const sig = assignedRef.current[stranger.id] || { text: "—", ago: "", id: "", real: false };
       setReveal({ ...sig, freq: f.currentFreq().toFixed(1) });
       setReported(false);
+      setFriendReq("");
       radio.chime();
       radio.silenceStatic();
       setTimeout(() => {
@@ -81,6 +95,7 @@ export default function App() {
       }, 750);
     });
     fetchHealth().then((h) => setBroadcast(h.ok && h.persisted ? "live" : "echo"));
+    me().then((m) => { setUser(m.user); setAuthAvailable(m.available); });
 
     return () => f.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,13 +148,12 @@ export default function App() {
 
   const goConstellation = useCallback(async () => {
     const mine = draft.trim();
-    const signed = sigName.trim().slice(0, 24) || null;
+    const signed = user && showName ? user.callsign : null;
     const finalMsg = mine || "…";
     setMyMsg(finalMsg);
     setSent({ persisted: false, done: false, note: "" });
     fieldRef.current.enterConstellation();
     setScreen("constellation");
-    try { localStorage.setItem("frequency.name.v1", signed || ""); } catch { /* ignore */ }
     // record locally always; submit to the world only if the player wrote something
     setJournal(addEncounter({
       promptLabel: prompt.label,
@@ -148,7 +162,7 @@ export default function App() {
       freq: reveal.freq || null,
     }));
     if (mine) {
-      const res = await submitSignal(prompt, mine, signed);
+      const res = await submitSignal(prompt, mine, !!signed);
       setSent({
         persisted: !!res.persisted,
         done: true,
@@ -157,7 +171,7 @@ export default function App() {
     } else {
       setSent({ persisted: false, done: true, note: "" });
     }
-  }, [draft, sigName, prompt, reveal.text, reveal.name]);
+  }, [draft, user, showName, prompt, reveal.text, reveal.name]);
 
   const onReport = useCallback(async () => {
     setReported(true);
@@ -183,6 +197,45 @@ export default function App() {
   const onTone = useCallback((v) => {
     setTone(v);
     radioRef.current?.setTone(v / 100);
+  }, []);
+
+  /* ----- social actions ----- */
+  const doAuth = useCallback(async () => {
+    setAuthBusy(true); setAuthErr("");
+    const fn = authMode === "claim" ? register : login;
+    const r = await fn(csDraft.trim().toLowerCase(), pwDraft);
+    setAuthBusy(false);
+    if (r.ok) { setUser(r.user); setPwDraft(""); setAuthErr(""); setScreen("intro"); }
+    else setAuthErr(r.reason || "something went wrong");
+  }, [authMode, csDraft, pwDraft]);
+
+  const doLogout = useCallback(async () => { await logout(); setUser(null); }, []);
+
+  const openFriends = useCallback(async () => {
+    setFriendsOpen(true);
+    setSocial(await getFriends());
+  }, []);
+
+  const onFriendAct = useCallback(async (action, callsign) => {
+    await friendAction(action, callsign);
+    setSocial(await getFriends());
+  }, []);
+
+  const addFriend = useCallback(async () => {
+    setFriendReq("…");
+    const r = await friendAction("request", reveal.name);
+    setFriendReq(
+      r.ok
+        ? (r.accepted ? "you're connected now" : "request sent into the dark")
+        : (r.reason || "couldn't send")
+    );
+  }, [reveal.name]);
+
+  const onToggleShowName = useCallback(() => {
+    setShowName((v) => {
+      try { localStorage.setItem("frequency.showname.v1", v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -245,7 +298,19 @@ export default function App() {
           <div className="tonight">tonight everyone is tuned to <em>{prompt.label}</em></div>
           <button className="btn primary" onClick={beginTuning}>tune in</button>
           <div className="intro-foot">
-            <button className="linklike" onClick={openJournal}>your constellation</button>
+            <div className="intro-links">
+              <button className="linklike" onClick={openJournal}>your constellation</button>
+              {authAvailable && user && (
+                <button className="linklike" onClick={openFriends}>your frequencies</button>
+              )}
+              {authAvailable && (user ? (
+                <button className="linklike dim" onClick={doLogout}>{user.callsign} · sign out</button>
+              ) : (
+                <button className="linklike" onClick={() => { setAuthErr(""); setScreen("operator"); }}>
+                  sign in · claim a callsign
+                </button>
+              ))}
+            </div>
             <span className="fineprint">headphones &amp; a quiet minute recommended</span>
             <span className="fineprint credits">
               tonight's record: "{nightlyTrack().title}" · {nightlyTrack().artist} · cc0
@@ -278,6 +343,15 @@ export default function App() {
           <button className="btn primary" onClick={() => setScreen("give")}>
             leave your signal
           </button>
+          {user && reveal.name && reveal.name !== user.callsign && (
+            friendReq ? (
+              <div className="friend-note">{friendReq}</div>
+            ) : (
+              <button className="btn ghost" onClick={addFriend}>
+                keep this frequency — add {reveal.name}
+              </button>
+            )
+          )}
           <button className="report" onClick={onReport} disabled={reported}>
             {reported ? "thank you — signal flagged" : "report this signal"}
           </button>
@@ -299,15 +373,22 @@ export default function App() {
             autoFocus
           />
           <div className="counter">{draft.length}/90</div>
-          <input
-            className="name-input"
-            type="text"
-            value={sigName}
-            maxLength={24}
-            placeholder="sign it (optional) — or stay a stranger"
-            onChange={(e) => setSigName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); goConstellation(); } }}
-          />
+          {user ? (
+            <button
+              className={"identity-toggle " + (showName ? "shown" : "")}
+              onClick={onToggleShowName}
+              role="switch" aria-checked={showName}
+            >
+              <span className="identity-dot"></span>
+              {showName ? `broadcast as ${user.callsign}` : "stay a stranger"}
+            </button>
+          ) : (
+            authAvailable && (
+              <button className="linklike dim" onClick={() => setScreen("operator")}>
+                claim a callsign to sign your signals
+              </button>
+            )
+          )}
           <button className="btn primary" disabled={!draft.trim()} onClick={goConstellation}>
             send it out
           </button>
@@ -333,7 +414,7 @@ export default function App() {
               <span className="dot you-dot"></span>
               <span className="pair-msg">
                 “{myMsg}”
-                <span className="pair-name">— {sigName.trim() || "a stranger"} (you)</span>
+                <span className="pair-name">— {user && showName ? user.callsign : "a stranger"} (you)</span>
               </span>
             </div>
           </div>
@@ -354,6 +435,98 @@ export default function App() {
           {shareNote && <div className="share-note">{shareNote}</div>}
         </div>
       </Screen>
+
+      {/* OPERATOR — claim or sign in to a callsign */}
+      <Screen show={screen === "operator"}>
+        <div className="operator">
+          <div className="kicker">OPERATOR REGISTRATION</div>
+          <p className="operator-sub">
+            A callsign is how strangers find you again.<br/>
+            No email, no recovery — just a name in the dark.
+          </p>
+          <div className="operator-tabs">
+            <button
+              className={"linklike " + (authMode === "claim" ? "" : "dim")}
+              onClick={() => { setAuthMode("claim"); setAuthErr(""); }}
+            >claim a callsign</button>
+            <span className="fineprint">·</span>
+            <button
+              className={"linklike " + (authMode === "signin" ? "" : "dim")}
+              onClick={() => { setAuthMode("signin"); setAuthErr(""); }}
+            >sign in</button>
+          </div>
+          <input
+            className="operator-input"
+            type="text"
+            value={csDraft}
+            maxLength={16}
+            placeholder="callsign (a-z, 0-9, _ -)"
+            autoCapitalize="none" autoCorrect="off" spellCheck="false"
+            onChange={(e) => setCsDraft(e.target.value)}
+          />
+          <input
+            className="operator-input"
+            type="password"
+            value={pwDraft}
+            maxLength={72}
+            placeholder="password"
+            onChange={(e) => setPwDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doAuth(); } }}
+          />
+          <div className="operator-err">{authErr}</div>
+          <button
+            className="btn primary"
+            disabled={authBusy || !csDraft.trim() || !pwDraft}
+            onClick={doAuth}
+          >
+            {authBusy ? "…" : authMode === "claim" ? "go on air" : "tune back in"}
+          </button>
+          <button className="btn ghost" onClick={() => setScreen("intro")}>back</button>
+        </div>
+      </Screen>
+
+      {/* FRIENDS — the frequencies you've kept */}
+      {friendsOpen && (
+        <div className="journal-overlay" onClick={(e) => { if (e.target.classList.contains("journal-overlay")) setFriendsOpen(false); }}>
+          <div className="journal">
+            <div className="kicker">YOUR FREQUENCIES</div>
+            <p className="journal-sub">the strangers you chose to keep.</p>
+            {social.requests.length > 0 && (
+              <div className="freq-requests">
+                {social.requests.map((r) => (
+                  <div className="freq-request" key={r.from}>
+                    <span className="freq-name">{r.from}</span>
+                    <span className="freq-ask">wants to keep your frequency</span>
+                    <button className="linklike" onClick={() => onFriendAct("accept", r.from)}>accept</button>
+                    <button className="linklike dim" onClick={() => onFriendAct("decline", r.from)}>decline</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {social.friends.length === 0 && social.requests.length === 0 ? (
+              <p className="journal-empty">
+                No frequencies kept yet. When a reveal carries a callsign,
+                you can ask to keep it.
+              </p>
+            ) : (
+              <div className="freq-list">
+                {social.friends.map((f) => (
+                  <div className="freq-row" key={f.callsign}>
+                    <div className="freq-head">
+                      <span className="dot them-dot"></span>
+                      <span className="freq-name">{f.callsign}</span>
+                      <span className="freq-when">{lastTunedLabel(f.lastTunedDay)}</span>
+                      <button className="linklike dim" onClick={() => onFriendAct("remove", f.callsign)}>let go</button>
+                    </div>
+                    {f.lastSignal && <div className="freq-signal">“{f.lastSignal.text}”</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn ghost" onClick={() => setFriendsOpen(false)}>close</button>
+          </div>
+        </div>
+      )}
 
       {/* JOURNAL — sky map of strangers + radio operator's logbook */}
       {journalOpen && (

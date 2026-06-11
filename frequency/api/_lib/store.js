@@ -142,6 +142,146 @@ export async function removeSignal(promptId, id) {
   catch { return { removed: false }; }
 }
 
+/* ---------------- users & friendships (v5 social layer) ----------------
+ * Race-safe by construction: every relationship lives at a unique blob path,
+ * and a user's blob is written only by its owner. */
+
+const USER_PREFIX = "users/";
+const REQ_PREFIX = "freqreq/";    // freqreq/{to}/{from}.json
+const FRIEND_PREFIX = "friendsof/"; // friendsof/{me}/{friend}.json (+ mirror)
+
+async function readJsonAt(pathname) {
+  try {
+    const { list } = await blob();
+    const { blobs } = await list({ prefix: pathname, limit: 1 });
+    const hit = blobs.find((b) => b.pathname === pathname);
+    if (!hit) return null;
+    const res = await fetch(hit.url, { cache: "no-store" });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeJsonAt(pathname, data) {
+  const { put } = await blob();
+  await put(pathname, JSON.stringify(data), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+}
+
+async function deleteAt(pathname) {
+  try {
+    const { del, list } = await blob();
+    const { blobs } = await list({ prefix: pathname, limit: 1 });
+    const hit = blobs.find((b) => b.pathname === pathname);
+    if (hit) await del(hit.url);
+    return !!hit;
+  } catch {
+    return false;
+  }
+}
+
+export const accountsAvailable = () => hasBlob();
+
+export async function getUser(callsign) {
+  if (!hasBlob()) return null;
+  return readJsonAt(USER_PREFIX + callsign + ".json");
+}
+
+/** Create if absent. Returns { ok } | { ok:false, reason }. */
+export async function createUser(callsign, salt, hash) {
+  if (!hasBlob()) return { ok: false, reason: "accounts unavailable" };
+  if (await getUser(callsign)) return { ok: false, reason: "that callsign is taken" };
+  await writeJsonAt(USER_PREFIX + callsign + ".json", {
+    callsign, salt, hash,
+    createdAt: Date.now(),
+    lastSignal: null,
+    lastTunedDay: null,
+  });
+  return { ok: true };
+}
+
+/** Owner-only update of presence info after a post. Best-effort. */
+export async function touchUser(callsign, lastSignal) {
+  try {
+    const u = await getUser(callsign);
+    if (!u) return;
+    u.lastTunedDay = Math.floor(Date.now() / 86400000);
+    if (lastSignal) u.lastSignal = lastSignal;
+    await writeJsonAt(USER_PREFIX + callsign + ".json", u);
+  } catch { /* presence is best-effort */ }
+}
+
+export async function sendFriendRequest(from, to) {
+  if (!hasBlob()) return { ok: false, reason: "unavailable" };
+  if (from === to) return { ok: false, reason: "that's your own signal" };
+  if (!(await getUser(to))) return { ok: false, reason: "no such callsign" };
+  if (await readJsonAt(`${FRIEND_PREFIX}${from}/${to}.json`))
+    return { ok: false, reason: "already friends" };
+  if (await readJsonAt(`${REQ_PREFIX}${to}/${from}.json`))
+    return { ok: false, reason: "request already sent" };
+  // if they already asked *you*, accept instead of double-requesting
+  if (await readJsonAt(`${REQ_PREFIX}${from}/${to}.json`))
+    return acceptFriendRequest(from, to);
+  await writeJsonAt(`${REQ_PREFIX}${to}/${from}.json`, { from, to, t: Date.now() });
+  return { ok: true, sent: true };
+}
+
+export async function acceptFriendRequest(me, from) {
+  if (!hasBlob()) return { ok: false, reason: "unavailable" };
+  const t = Date.now();
+  await writeJsonAt(`${FRIEND_PREFIX}${me}/${from}.json`, { friend: from, t });
+  await writeJsonAt(`${FRIEND_PREFIX}${from}/${me}.json`, { friend: me, t });
+  await deleteAt(`${REQ_PREFIX}${me}/${from}.json`);
+  return { ok: true, accepted: true };
+}
+
+export async function declineFriendRequest(me, from) {
+  if (!hasBlob()) return { ok: false, reason: "unavailable" };
+  await deleteAt(`${REQ_PREFIX}${me}/${from}.json`);
+  return { ok: true };
+}
+
+export async function removeFriend(me, friend) {
+  if (!hasBlob()) return { ok: false, reason: "unavailable" };
+  await deleteAt(`${FRIEND_PREFIX}${me}/${friend}.json`);
+  await deleteAt(`${FRIEND_PREFIX}${friend}/${me}.json`);
+  return { ok: true };
+}
+
+/** Friends with presence, plus the pending request inbox. */
+export async function getSocial(me) {
+  if (!hasBlob()) return { friends: [], requests: [] };
+  try {
+    const { list } = await blob();
+    const [fr, rq] = await Promise.all([
+      list({ prefix: `${FRIEND_PREFIX}${me}/` }),
+      list({ prefix: `${REQ_PREFIX}${me}/` }),
+    ]);
+    const names = fr.blobs.map((b) =>
+      b.pathname.slice(`${FRIEND_PREFIX}${me}/`.length).replace(/\.json$/, ""));
+    const friends = await Promise.all(names.map(async (n) => {
+      const u = await getUser(n);
+      return {
+        callsign: n,
+        lastSignal: u?.lastSignal || null,
+        lastTunedDay: u?.lastTunedDay ?? null,
+      };
+    }));
+    const requests = (await Promise.all(rq.blobs.map(async (b) => {
+      const res = await fetch(b.url, { cache: "no-store" });
+      return res.ok ? await res.json() : null;
+    }))).filter(Boolean).map((r) => ({ from: r.from, t: r.t }));
+    return { friends, requests };
+  } catch {
+    return { friends: [], requests: [] };
+  }
+}
+
 // deterministic-ish variety for seed timestamps; AGE_DAYS mirrors AGO_OPTS
 const AGO_OPTS = ["4 minutes ago", "26 minutes ago", "an hour ago", "2 hours ago", "5 hours ago", "last night", "yesterday", "3 days ago"];
 const AGE_DAYS = [0.003, 0.018, 0.042, 0.083, 0.21, 0.6, 1, 3];

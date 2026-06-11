@@ -49,19 +49,20 @@ export async function fetchSignals(prompt, n = 7) {
   }
 }
 
-export async function submitSignal(prompt, text, name = null) {
+export async function submitSignal(prompt, text, showName = false) {
   try {
     return await withTimeout(
       (signal) => fetch("/api/signals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.id, text, name }),
+        credentials: "same-origin",
+        body: JSON.stringify({ prompt: prompt.id, text, showName }),
         signal,
       }).then((r) => r.json()),
       TIMEOUT_MS
     );
   } catch {
-    return { ok: true, persisted: false, text, name, offline: true };
+    return { ok: true, persisted: false, text, offline: true };
   }
 }
 
