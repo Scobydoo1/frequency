@@ -12,7 +12,11 @@ const PREFIX = "signals/";
 const MAX_PER_PROMPT = 500; // keep the newest N real messages per prompt
 const VALID = new Set(Object.keys(SEEDS));
 
-const hasBlob = () => !!process.env.BLOB_READ_WRITE_TOKEN;
+/* Two auth styles: classic read-write token, or the newer store connection
+ * (BLOB_STORE_ID injected by Vercel + VERCEL_OIDC_TOKEN provided to functions
+ * at runtime; @vercel/blob ≥2 picks both up automatically). */
+const hasBlob = () =>
+  !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 
 // date-seeded baseline so the "tuned tonight" count feels alive and is stable
 // within a night, then real submissions add on top.
@@ -67,6 +71,18 @@ function relAgo(ts) {
   if (h < 24) return h === 1 ? "an hour ago" : `${h} hours ago`;
   const d = Math.round(h / 24);
   return d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+/** True only if the store is actually reachable (probes with a 1-item list). */
+export async function isPersisted() {
+  if (!hasBlob()) return false;
+  try {
+    const { list } = await blob();
+    await list({ prefix: PREFIX, limit: 1 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Pick up to n messages for a prompt, blending real ones first, then seeds. */
