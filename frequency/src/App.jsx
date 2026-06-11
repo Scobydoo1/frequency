@@ -2,8 +2,8 @@
  * radio sound, the signal backend, and the local journal. */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FrequencyField } from "./engine/field-engine.js";
-import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt } from "./content.js";
-import { fetchSignals, submitSignal, reportSignal, fmtCount } from "./api.js";
+import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack } from "./content.js";
+import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
 import { loadJournal, addEncounter, formatWhen } from "./journal.js";
 
@@ -21,8 +21,12 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
   const [journal, setJournal] = useState([]);
-  const [sent, setSent] = useState({ persisted: false, done: false });
+  const [sent, setSent] = useState({ persisted: false, done: false, note: "" });
   const [shareNote, setShareNote] = useState("");
+  const [sigName, setSigName] = useState(() => {
+    try { return localStorage.getItem("frequency.name.v1") || ""; } catch { return ""; }
+  });
+  const [broadcast, setBroadcast] = useState(null); // null | "live" | "echo"
 
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -62,6 +66,8 @@ export default function App() {
         setScreen("locked");
       }, 750);
     });
+    fetchHealth().then((h) => setBroadcast(h.ok && h.persisted ? "live" : "echo"));
+
     return () => f.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -82,20 +88,30 @@ export default function App() {
 
   const goConstellation = useCallback(async () => {
     const mine = draft.trim();
+    const signed = sigName.trim().slice(0, 24) || null;
     const finalMsg = mine || "…";
     setMyMsg(finalMsg);
-    setSent({ persisted: false, done: false });
+    setSent({ persisted: false, done: false, note: "" });
     fieldRef.current.enterConstellation();
     setScreen("constellation");
+    try { localStorage.setItem("frequency.name.v1", signed || ""); } catch { /* ignore */ }
     // record locally always; submit to the world only if the player wrote something
-    setJournal(addEncounter({ promptLabel: prompt.label, received: reveal.text, given: mine }));
+    setJournal(addEncounter({
+      promptLabel: prompt.label,
+      received: reveal.text, receivedName: reveal.name || null,
+      given: mine, givenName: signed,
+    }));
     if (mine) {
-      const res = await submitSignal(prompt, mine);
-      setSent({ persisted: !!res.persisted, done: true });
+      const res = await submitSignal(prompt, mine, signed);
+      setSent({
+        persisted: !!res.persisted,
+        done: true,
+        note: res.ok === false ? res.reason || "" : "",
+      });
     } else {
-      setSent({ persisted: false, done: true });
+      setSent({ persisted: false, done: true, note: "" });
     }
-  }, [draft, prompt, reveal.text]);
+  }, [draft, sigName, prompt, reveal.text, reveal.name]);
 
   const onReport = useCallback(async () => {
     setReported(true);
@@ -164,7 +180,14 @@ export default function App() {
           <div className="intro-foot">
             <button className="linklike" onClick={openJournal}>your constellation</button>
             <span className="fineprint">headphones &amp; a quiet minute recommended</span>
-            <span className="fineprint credits">music: "chill lofi inspired" · omfgdude &amp; qubodup · cc0</span>
+            <span className="fineprint credits">
+              tonight's record: "{nightlyTrack().title}" · {nightlyTrack().artist} · cc0
+            </span>
+            {broadcast && (
+              <span className="fineprint broadcast" data-live={broadcast === "live"}>
+                broadcast: {broadcast}
+              </span>
+            )}
           </div>
         </div>
       </Screen>
@@ -181,7 +204,7 @@ export default function App() {
         <div className="reveal">
           <div className="kicker">YOU FOUND SOMEONE · {prompt.label}</div>
           <blockquote className="msg">“{reveal.text}”</blockquote>
-          <div className="attr">— a stranger{reveal.ago ? `, ${reveal.ago}` : ""}</div>
+          <div className="attr">— {reveal.name || "a stranger"}{reveal.ago ? `, ${reveal.ago}` : ""}</div>
           <button className="btn primary" onClick={() => setScreen("give")}>
             leave your signal
           </button>
@@ -206,6 +229,15 @@ export default function App() {
             autoFocus
           />
           <div className="counter">{draft.length}/90</div>
+          <input
+            className="name-input"
+            type="text"
+            value={sigName}
+            maxLength={24}
+            placeholder="sign it (optional) — or stay a stranger"
+            onChange={(e) => setSigName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); goConstellation(); } }}
+          />
           <button className="btn primary" disabled={!draft.trim()} onClick={goConstellation}>
             send it out
           </button>
@@ -222,16 +254,26 @@ export default function App() {
           <div className="pair">
             <div className="pair-row them">
               <span className="dot them-dot"></span>
-              <span className="pair-msg">“{reveal.text}”</span>
+              <span className="pair-msg">
+                “{reveal.text}”
+                <span className="pair-name">— {reveal.name || "a stranger"}</span>
+              </span>
             </div>
             <div className="pair-row you">
               <span className="dot you-dot"></span>
-              <span className="pair-msg">“{myMsg}”</span>
+              <span className="pair-msg">
+                “{myMsg}”
+                <span className="pair-name">— {sigName.trim() || "a stranger"} (you)</span>
+              </span>
             </div>
           </div>
           {sent.done && myMsg !== "…" && (
             <div className="sent-note">
-              {sent.persisted ? "your signal is out there now — someone will find it" : "your signal echoed into the dark"}
+              {sent.note
+                ? `the dark didn't take it — ${sent.note}`
+                : sent.persisted
+                  ? "your signal is out there now — someone will find it"
+                  : "your signal echoed into the dark"}
             </div>
           )}
           <div className="finale-actions">
@@ -256,8 +298,12 @@ export default function App() {
                 {journal.map((e, i) => (
                   <div className="journal-entry" key={i}>
                     <div className="journal-when">{formatWhen(e.ts)} · {e.promptLabel}</div>
-                    {e.received && <div className="journal-recv">“{e.received}”</div>}
-                    {e.given && <div className="journal-given">you: “{e.given}”</div>}
+                    {e.received && (
+                      <div className="journal-recv">“{e.received}”{e.receivedName ? ` — ${e.receivedName}` : ""}</div>
+                    )}
+                    {e.given && (
+                      <div className="journal-given">you{e.givenName ? ` (${e.givenName})` : ""}: “{e.given}”</div>
+                    )}
                   </div>
                 ))}
               </div>

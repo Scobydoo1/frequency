@@ -21,7 +21,7 @@ function localSignals(prompt, n) {
   while (pool.length && out.length < Math.max(3, Math.min(14, n))) {
     s = (s * 1103515245 + 12345) & 0x7fffffff;
     const text = pool.splice(s % pool.length, 1)[0];
-    out.push({ id: "seed-local", text, ago: agoFor(out.length, seed), real: false });
+    out.push({ id: "seed-local", text, name: null, ago: agoFor(out.length, seed), real: false });
   }
   return {
     messages: out,
@@ -44,19 +44,31 @@ export async function fetchSignals(prompt, n = 7) {
   }
 }
 
-export async function submitSignal(prompt, text) {
+export async function submitSignal(prompt, text, name = null) {
   try {
     return await withTimeout(
       (signal) => fetch("/api/signals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.id, text }),
+        body: JSON.stringify({ prompt: prompt.id, text, name }),
         signal,
       }).then((r) => r.json()),
       TIMEOUT_MS
     );
   } catch {
-    return { ok: true, persisted: false, text, offline: true };
+    return { ok: true, persisted: false, text, name, offline: true };
+  }
+}
+
+/** { ok, persisted } — lets the UI show "broadcast: live" vs "echo". */
+export async function fetchHealth() {
+  try {
+    return await withTimeout(
+      (signal) => fetch("/api/health", { signal }).then((r) => r.json()),
+      TIMEOUT_MS
+    );
+  } catch {
+    return { ok: false, persisted: false };
   }
 }
 

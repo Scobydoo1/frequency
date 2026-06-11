@@ -27,3 +27,35 @@ export function nightlyPrompt(now = new Date()) {
   const day = Math.floor(now.getTime() / 86400000);
   return PROMPTS[seededInt(day + 1, 0, PROMPTS.length - 1)];
 }
+
+/* Tonight's station: one lofi record per night, same for everyone.
+ * All tracks CC0 / public domain from opengameart.org (licenses verified on
+ * each track page). MP3 required (iOS can't decode OGG); OGG used where the
+ * artist provided a seamless loop edit. */
+export const TRACKS = [
+  {
+    slug: "chill-lofi",
+    title: "Chill lofi inspired",
+    artist: "omfgdude (loop edit: qubodup)",
+    mp3: "/audio/lofi-loop.mp3",
+    ogg: "/audio/lofi-loop.ogg",
+  },
+  {
+    slug: "since-2am",
+    title: "Since 2 A.M.",
+    artist: "TAD",
+    mp3: "/audio/since-2am.mp3",
+  },
+  {
+    slug: "rhodes-day",
+    title: "happy lofi day",
+    artist: "Tarush Singhal",
+    mp3: "/audio/rhodes-day.mp3",
+  },
+];
+
+export function nightlyTrack(now = new Date()) {
+  const day = Math.floor(now.getTime() / 86400000);
+  // offset the seed so the track and prompt rotations don't stay in sync
+  return TRACKS[seededInt(day + 7, 0, TRACKS.length - 1)];
+}

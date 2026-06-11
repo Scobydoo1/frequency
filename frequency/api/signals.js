@@ -1,11 +1,12 @@
-/* GET  /api/signals?prompt=<id>&n=7  → { messages:[{id,text,ago,real}], count }
- * POST /api/signals  { prompt, text }  → { ok, id, persisted } | { ok:false, reason }
+/* GET  /api/signals?prompt=<id>&n=7  → { messages:[{id,text,name,ago,real}], count }
+ * POST /api/signals  { prompt, text, name? }  → { ok, id, persisted } | { ok:false, reason }
+ *   name is an optional signature (≤24 chars, moderated); absent/empty = anonymous.
  *
  * Vercel serverless function (Node runtime). Persists to Vercel Blob when wired,
  * otherwise serves curated seeds — always returns a playable payload.
  */
 import { getSignals, addSignal } from "./_lib/store.js";
-import { moderate } from "./_lib/moderation.js";
+import { moderate, moderateName } from "./_lib/moderation.js";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -23,8 +24,10 @@ export default async function handler(req, res) {
       const prompt = body.prompt;
       const verdict = moderate(body.text);
       if (!verdict.ok) return res.status(200).json({ ok: false, reason: verdict.reason });
-      const { id, persisted } = await addSignal(prompt, verdict.text);
-      return res.status(200).json({ ok: true, id, persisted, text: verdict.text });
+      const nameVerdict = moderateName(body.name);
+      if (!nameVerdict.ok) return res.status(200).json({ ok: false, reason: nameVerdict.reason });
+      const { id, persisted } = await addSignal(prompt, verdict.text, nameVerdict.name);
+      return res.status(200).json({ ok: true, id, persisted, text: verdict.text, name: nameVerdict.name });
     }
 
     res.setHeader("Allow", "GET, POST");

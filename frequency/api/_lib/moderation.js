@@ -54,6 +54,25 @@ export function moderate(raw) {
   return { ok: true, text };
 }
 
+export const NAME_MAX = 24;
+
+/** Optional signature. Empty is fine (anonymous). Returns
+ *  { ok: true, name: string|null } or { ok: false, reason }. */
+export function moderateName(raw) {
+  if (raw == null || raw === "") return { ok: true, name: null };
+  const name = sanitize(raw).slice(0, NAME_MAX);
+  if (!name) return { ok: true, name: null };
+
+  if (URL_RE.test(name) || EMAIL_RE.test(name) || PHONE_RE.test(name) || HANDLE_RE.test(name))
+    return { ok: false, reason: "names can't carry contact info" };
+
+  const lower = name.toLowerCase();
+  if (BLOCK_WORDS.some((w) => lower.includes(w)))
+    return { ok: false, reason: "let's keep names kind" };
+
+  return { ok: true, name };
+}
+
 /** Stable short id from text + time, for reporting/dedupe. */
 export function signalId(text, ts) {
   let h = 2166136261 >>> 0;

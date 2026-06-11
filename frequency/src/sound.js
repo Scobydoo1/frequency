@@ -15,6 +15,8 @@
  * Everything is gated behind a user gesture (autoplay policy) and a persisted
  * mute toggle. No audio files except the music — every texture is synthesized.
  */
+import { nightlyTrack } from "./content.js";
+
 const MUTE_KEY = "frequency.muted.v1";
 
 const MUSIC_BASE = 0.30;   // resting music level
@@ -177,15 +179,18 @@ export class Radio {
 
   async _loadMusic() {
     try {
+      const track = nightlyTrack();
+      this.track = track; // exposed so the UI can show tonight's record
       const probe = document.createElement("audio");
-      const ogg = probe.canPlayType('audio/ogg; codecs="vorbis"');
-      const url = ogg ? "/audio/lofi-loop.ogg" : "/audio/lofi-loop.mp3";
+      const canOgg = !!probe.canPlayType('audio/ogg; codecs="vorbis"');
+      const useOgg = canOgg && track.ogg;
+      const url = useOgg ? track.ogg : track.mp3;
       const buf = await fetch(url).then((r) => r.arrayBuffer());
       const audio = await this.ctx.decodeAudioData(buf);
       const src = this.ctx.createBufferSource();
       src.buffer = audio;
       src.loop = true;
-      if (!ogg) { // hide the mp3 encoder gap at the seam
+      if (!useOgg) { // hide the mp3 encoder gap at the seam
         src.loopStart = 0.08;
         src.loopEnd = audio.duration - 0.08;
       }

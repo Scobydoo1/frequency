@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seededInt, agoFor, PROMPTS, nightlyPrompt } from "../src/content.js";
+import { seededInt, agoFor, PROMPTS, nightlyPrompt, nightlyTrack, TRACKS } from "../src/content.js";
 
 describe("seededInt", () => {
   it("always stays within [lo, hi] (Math.imul sign regression)", () => {
@@ -38,6 +38,21 @@ describe("nightlyPrompt", () => {
   it("rotates across days", () => {
     const ids = new Set();
     for (let i = 0; i < 30; i++) ids.add(nightlyPrompt(new Date(Date.UTC(2026, 5, 1 + i))).id);
+    expect(ids.size).toBeGreaterThan(1);
+  });
+});
+
+describe("nightlyTrack", () => {
+  it("is stable within a day and is a real track with an mp3", () => {
+    const a = nightlyTrack(new Date("2026-06-11T10:00:00Z"));
+    const b = nightlyTrack(new Date("2026-06-11T22:00:00Z"));
+    expect(a.slug).toBe(b.slug);
+    expect(TRACKS.map((t) => t.slug)).toContain(a.slug);
+    for (const t of TRACKS) expect(t.mp3).toMatch(/\.mp3$/);
+  });
+  it("rotates across days", () => {
+    const ids = new Set();
+    for (let i = 0; i < 30; i++) ids.add(nightlyTrack(new Date(Date.UTC(2026, 5, 1 + i))).slug);
     expect(ids.size).toBeGreaterThan(1);
   });
 });

@@ -76,12 +76,12 @@ export async function getSignals(promptId, n = 7) {
 
   const real = messages
     .slice(-60)
-    .map((mm) => ({ id: mm.id, text: mm.text, ago: relAgo(mm.ts), real: true }));
+    .map((mm) => ({ id: mm.id, text: mm.text, name: mm.name || null, ago: relAgo(mm.ts), real: true }));
   // shuffle real, then top up from seeds (which are timeless)
   shuffle(real);
 
   const seeds = SEEDS[promptId].map((text, i) => ({
-    id: "seed-" + i, text, ago: seedAgo(i, promptId), real: false,
+    id: "seed-" + i, text, name: null, ago: seedAgo(i, promptId), real: false,
   }));
   shuffle(seeds);
 
@@ -89,8 +89,9 @@ export async function getSignals(promptId, n = 7) {
   return { messages: picked, count: baselineCount(promptId) + submissions };
 }
 
-/** Persist a moderated message. Returns { id, persisted }. */
-export async function addSignal(promptId, text) {
+/** Persist a moderated message (name optional, null = anonymous).
+ *  Returns { id, persisted }. */
+export async function addSignal(promptId, text, name = null) {
   if (!VALID.has(promptId)) promptId = [...VALID][0];
   const ts = Date.now();
   const id = signalId(text, ts);
@@ -99,7 +100,7 @@ export async function addSignal(promptId, text) {
   const data = await readRaw(promptId);
   // dedupe identical text from the recent window
   if (!data.messages.some((m) => m.text === text)) {
-    data.messages.push({ id, text, ts });
+    data.messages.push({ id, text, name: name || null, ts });
     if (data.messages.length > MAX_PER_PROMPT)
       data.messages = data.messages.slice(-MAX_PER_PROMPT);
   }

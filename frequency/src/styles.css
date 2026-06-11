@@ -159,6 +159,16 @@ body {
 .give-input::placeholder { color: var(--ink-dim); opacity: .45; font-style: italic; }
 .give-input:focus { border-color: var(--you); }
 .counter { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--ink-dim); opacity: .6; margin-top: -8px; }
+.name-input {
+  width: min(70vw, 320px);
+  background: transparent;
+  border: none; border-bottom: 1px solid rgba(255,255,255,.12);
+  color: var(--ink); font-family: var(--mono); font-size: 12px;
+  letter-spacing: .08em; text-align: center; padding: 8px 10px;
+  outline: none; transition: border-color .3s;
+}
+.name-input::placeholder { color: var(--ink-dim); opacity: .4; }
+.name-input:focus { border-color: var(--you); }
 
 /* finale */
 .finale { max-width: 640px; text-align: center; display: grid; gap: 16px; justify-items: center; }
@@ -192,6 +202,13 @@ body {
 
 .intro-foot { display: grid; gap: 12px; justify-items: center; margin-top: 2px; }
 .credits { opacity: .32; font-size: 9.5px; }
+.broadcast { letter-spacing: .22em; text-transform: uppercase; opacity: .3; }
+.broadcast[data-live="true"] { color: #8fe3b0; opacity: .5; }
+.pair-name {
+  display: block; font-family: var(--mono); font-style: normal;
+  font-size: 10.5px; letter-spacing: .12em;
+  color: var(--ink-dim); opacity: .75; margin-top: 6px;
+}
 .linklike {
   background: none; border: none; cursor: pointer;
   font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;

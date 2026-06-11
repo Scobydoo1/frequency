@@ -1,0 +1,109 @@
+# FREQUENCY — Architecture
+
+*A game about being found.* Async-multiplayer PWA: drift a light through the
+dark, lock onto a stranger's signal, read the one line they left on tonight's
+prompt, leave your own — signed or anonymous — for whoever comes next.
+
+- **Live:** https://frequency-drab.vercel.app
+- **Repo:** https://github.com/Scobydoo1/frequency
+- **Origin:** designed in Claude Design (claude.ai/design), handed off as an
+  HTML prototype, implemented as a production app.
+
+## System overview
+
+```
+┌────────────────────────────  browser (PWA)  ───────────────────────────┐
+│                                                                        │
+│  App.jsx ── screens: intro → tuning → locked → give → constellation    │
+│    │  │  │                                                             │
+│    │  │  └─ journal.js ──── localStorage (your encounters, your name)  │
+│    │  └──── sound.js ────── WebAudio: nightly lofi record (CC0),       │
+│    │                        warm air, rain, crackle, static→carrier    │
+│    └─────── field-engine.js  canvas: starfield, proximity lock,        │
+│    │                         waveform, constellation                   │
+│    └─────── api.js ──────── fetch + timeout + local fallback           │
+│                  │                                                     │
+│  content.js ─ prompts, nightly prompt/track rotation (date-seeded)     │
+│  service worker ─ precache app shell, runtime-cache audio              │
+└──────────────────┼─────────────────────────────────────────────────────┘
+                   │ HTTPS (same origin)
+┌──────────────────▼──────────────  Vercel  ─────────────────────────────┐
+│  /api/signals  GET  random signals + tuned-tonight count per prompt    │
+│                POST moderated message {text ≤90, name ≤24 | null}      │
+│  /api/report   POST flag a signal by id (removes it)                   │
+│  /api/health   GET  { ok, persisted } → "broadcast: live | echo"       │
+│        │                                                               │
+│  _lib/moderation.js  pure: sanitize, moderate(text), moderateName      │
+│  _lib/store.js       adapter: Vercel Blob when BLOB_READ_WRITE_TOKEN   │
+│  _lib/seeds.js       curated seed messages (fallback + topping-up)     │
+│        │                                                               │
+│  Vercel Blob store "frequency-signals"                                 │
+│    signals/<promptId>.json → { messages:[{id,text,name,ts}],           │
+│                                submissions }                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Module responsibilities
+
+| Module | Owns | Depends on |
+|---|---|---|
+| `src/engine/field-engine.js` | Canvas rendering + lock mechanic (pure imperative; no React/network) | — |
+| `src/sound.js` | The whole soundscape; nightly record selection | `content.js` |
+| `src/content.js` | Prompts, palettes, nightly prompt + track rotation | `shared/prompts.js` |
+| `src/api.js` | All network I/O; 4s timeouts; local fallback payloads | `content.js` |
+| `src/journal.js` | localStorage journal of encounters | — |
+| `src/App.jsx` | Screen state machine; wires everything | all of the above |
+| `api/_lib/moderation.js` | Pure text/name moderation (unit-tested) | — |
+| `api/_lib/store.js` | Persistence adapter over Vercel Blob | `seeds.js`, `moderation.js` |
+| `api/*.js` | Thin HTTP handlers | `_lib/*` |
+
+## Nightly rotation
+
+Both the prompt and the lofi record are chosen by hashing the day number
+(`floor(epoch / 86400000)`), so everyone on Earth shares the same frequency
+for ~24h, then it rotates. Tracks (all CC0, license verified on opengameart.org;
+MP3 required because iOS can't decode OGG):
+
+1. "Chill lofi inspired" — omfgdude (seamless loop edit: qubodup) — MP3 + OGG
+2. "Since 2 A.M." — TAD — MP3
+3. "happy lofi day" — Tarush Singhal — MP3
+
+## Degradation modes (always playable)
+
+| Condition | Behavior |
+|---|---|
+| Blob store not connected | API serves curated seeds; `persisted:false`; intro shows "broadcast: echo" |
+| API unreachable / offline | `api.js` local fallback (same payload shape); PWA serves cached shell + audio |
+| WebAudio unavailable / muted | Silent game, all mechanics intact |
+| OGG unsupported (iOS) | MP3 with loop-seam trim |
+
+## Free-tier service inventory
+
+| Service | Plan | Used for |
+|---|---|---|
+| Vercel Hosting + Functions | Hobby (free) | Static PWA + 3 serverless endpoints |
+| Vercel Blob | Free 1GB | Message persistence |
+| GitHub + Actions | Free | Repo + CI (vitest + build on push) |
+| OpenGameArt CC0 music | Public domain | Nightly records |
+
+## Runbook
+
+```sh
+cd frequency
+npm run dev            # local dev (API functions need `vercel dev` instead)
+npm test               # 40 unit tests
+npm run build          # production build + PWA precache
+npx vercel deploy --prod --yes   # deploy (run from frequency/)
+```
+
+- **Connect the database** (one-time): Vercel dashboard → Storage →
+  `frequency-signals` → Connect Project → `frequency` (all environments).
+  Next deploy flips `/api/health` to `persisted:true` ("broadcast: live").
+- **Service worker note:** after a deploy, an already-open client serves the
+  previous shell until its next load.
+
+## Future work (documented, deliberately out of scope)
+
+Per-IP rate limiting, admin moderation view, message archive of past nights,
+realtime presence. The moderation honeypot + report flow cover abuse at
+current scale.

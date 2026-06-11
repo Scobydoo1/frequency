@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moderate, sanitize, signalId, MAX_LEN } from "../api/_lib/moderation.js";
+import { moderate, moderateName, sanitize, signalId, MAX_LEN } from "../api/_lib/moderation.js";
 
 describe("sanitize", () => {
   it("collapses whitespace and trims", () => {
@@ -53,5 +53,33 @@ describe("signalId", () => {
   });
   it("differs across text", () => {
     expect(signalId("a", 1)).not.toBe(signalId("b", 1));
+  });
+});
+
+describe("moderateName", () => {
+  it("empty or missing name is fine and anonymous", () => {
+    expect(moderateName("")).toEqual({ ok: true, name: null });
+    expect(moderateName(null)).toEqual({ ok: true, name: null });
+    expect(moderateName(undefined)).toEqual({ ok: true, name: null });
+    expect(moderateName("   ")).toEqual({ ok: true, name: null });
+  });
+  it("accepts a normal name, trimmed", () => {
+    expect(moderateName("  Minh ")).toEqual({ ok: true, name: "Minh" });
+  });
+  it("caps length at 24", () => {
+    const r = moderateName("a".repeat(40));
+    expect(r.ok).toBe(true);
+    expect(r.name.length).toBe(24);
+  });
+  it("rejects contact info in names", () => {
+    expect(moderateName("call 0901234567 now").ok).toBe(false);
+    expect(moderateName("me@example.com").ok).toBe(false);
+    expect(moderateName("www.spam.com").ok).toBe(false);
+  });
+  it("rejects hostile names", () => {
+    expect(moderateName("fuckface").ok).toBe(false);
+  });
+  it("strips control characters", () => {
+    expect(moderateName("Mi\x00nh")).toEqual({ ok: true, name: "Mi nh" });
   });
 });
