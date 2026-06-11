@@ -7,7 +7,8 @@
  *  2. Vinyl crackle — sparse synthesized ticks, panned in a slow circle around
  *     your head.
  *  3. Rain — pink noise through a deep lowpass, swelling and falling on a
- *     ~14-second breath cycle.
+ *     ~14-second breath cycle — over a sub-200Hz "warm air" bed (no tonal
+ *     drone: pitched oscillators beat and throb; filtered noise doesn't).
  *  4. Diegetic tuning — a whisper of soft static that cleans into a faint
  *     carrier tone as you lock on; a low, slow two-note chime on connection.
  *
@@ -20,7 +21,7 @@ const MUSIC_BASE = 0.30;   // resting music level
 const MUSIC_DUCKED = 0.16; // while a lock is charging
 const RAIN_BASE = 0.030;   // pink-noise rain bed
 const RAIN_BREATH = 0.016; // breath-cycle swell depth
-const CRACKLE_BASE = 0.16; // vinyl ticks (buffer itself is sparse/quiet)
+const CRACKLE_BASE = 0.09; // vinyl ticks (buffer itself is sparse/quiet)
 
 export class Radio {
   constructor() {
@@ -105,21 +106,23 @@ export class Radio {
     this.master.gain.value = this.muted ? 0 : 1;
     this.master.connect(this.ctx.destination);
 
-    // whisper drone: two detuned sines, barely audible
-    this.drone = this.ctx.createGain();
-    this.drone.gain.value = 0.014;
-    this.drone.connect(this.master);
-    for (const f of [55, 55.3, 110]) {
-      const o = this.ctx.createOscillator();
-      o.type = "sine"; o.frequency.value = f;
-      o.connect(this.drone); o.start();
-    }
+    // warm air: deep filtered noise instead of a tonal drone — no pitch,
+    // no beating, just the feeling of a quiet room (fades in over ~3s)
+    this.air = this.ctx.createGain();
+    this.air.gain.value = 0;
+    const airLp = this.ctx.createBiquadFilter();
+    airLp.type = "lowpass"; airLp.frequency.value = 180; airLp.Q.value = 0.3;
+    this._loopSource(this._pinkBuffer(5)).connect(airLp);
+    airLp.connect(this.air); this.air.connect(this.master);
+    this.air.gain.setTargetAtTime(0.020, this.ctx.currentTime, 3);
+    this._lfo(1 / 18, 0.007, this.air.gain);
 
     // rain: pink noise → deep lowpass → breathing gain (~14s cycle)
     const rainLp = this.ctx.createBiquadFilter();
     rainLp.type = "lowpass"; rainLp.frequency.value = 700; rainLp.Q.value = 0.4;
     this.rainGain = this.ctx.createGain();
-    this.rainGain.gain.value = RAIN_BASE;
+    this.rainGain.gain.value = 0;
+    this.rainGain.gain.setTargetAtTime(RAIN_BASE, this.ctx.currentTime, 2.5);
     this._loopSource(this._pinkBuffer(6)).connect(rainLp);
     rainLp.connect(this.rainGain); this.rainGain.connect(this.master);
     this._lfo(1 / 14, RAIN_BREATH, this.rainGain.gain);
@@ -127,10 +130,11 @@ export class Radio {
     // vinyl crackle, drifting slowly across the stereo field
     const cracklePan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
     this.crackleGain = this.ctx.createGain();
-    this.crackleGain.gain.value = CRACKLE_BASE;
+    this.crackleGain.gain.value = 0;
+    this.crackleGain.gain.setTargetAtTime(CRACKLE_BASE, this.ctx.currentTime, 3.5);
     const crackleSrc = this._loopSource(this._crackleBuffer(8));
     const crackleLp = this.ctx.createBiquadFilter();
-    crackleLp.type = "lowpass"; crackleLp.frequency.value = 3200;
+    crackleLp.type = "lowpass"; crackleLp.frequency.value = 2200;
     crackleSrc.connect(crackleLp);
     if (cracklePan) {
       crackleLp.connect(cracklePan); cracklePan.connect(this.crackleGain);
