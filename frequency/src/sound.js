@@ -15,9 +15,11 @@
  * Everything is gated behind a user gesture (autoplay policy) and a persisted
  * mute toggle. No audio files except the music — every texture is synthesized.
  */
-import { nightlyTrack } from "./content.js";
+import { nightlyTrack, nightlyAmbience } from "./content.js";
 
 const MUTE_KEY = "frequency.muted.v1";
+const TONE_KEY = "frequency.tone.v1";
+const TONE_DEFAULT = 0.4; // ≈1700Hz on the 600–8000Hz sweep
 
 const MUSIC_BASE = 0.30;   // resting music level
 const MUSIC_DUCKED = 0.16; // while a lock is charging
@@ -30,7 +32,42 @@ export class Radio {
     this.ctx = null;
     this.started = false;
     this.muted = this._loadMuted();
+    this.tone = this._loadTone();
     this.nodes = {};
+  }
+
+  _loadTone() {
+    try {
+      const v = parseFloat(localStorage.getItem(TONE_KEY));
+      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : TONE_DEFAULT;
+    } catch { return TONE_DEFAULT; }
+  }
+
+  /** 0..1 → 600–8000Hz, logarithmic like a real tone knob. */
+  _toneHz(v) { return 600 * Math.pow(8000 / 600, v); }
+
+  /** Tuning-knob tone sweep for the music bed. v in [0, 1]. */
+  setTone(v) {
+    this.tone = Math.min(1, Math.max(0, v));
+    try { localStorage.setItem(TONE_KEY, String(this.tone)); } catch { /* ignore */ }
+    if (this.musicFilter && this.ctx)
+      this.musicFilter.frequency.setTargetAtTime(this._toneHz(this.tone), this.ctx.currentTime, 0.08);
+  }
+
+  getTone() { return this.tone; }
+
+  /** Smoothed 0..1 output level — drives the starfield twinkle. */
+  level() {
+    if (!this.analyser || this.muted) return (this._lvl = (this._lvl || 0) * 0.95);
+    this.analyser.getByteTimeDomainData(this._lvlBuf);
+    let sum = 0;
+    for (let i = 0; i < this._lvlBuf.length; i++) {
+      const d = (this._lvlBuf[i] - 128) / 128;
+      sum += d * d;
+    }
+    const rms = Math.sqrt(sum / this._lvlBuf.length);
+    this._lvl = this._lvl * 0.85 + Math.min(1, rms * 4) * 0.15;
+    return this._lvl;
   }
 
   _loadMuted() {
@@ -58,15 +95,15 @@ export class Radio {
     return buf;
   }
 
-  /** Sparse vinyl crackle: occasional ticks with tiny decay tails. */
-  _crackleBuffer(seconds) {
+  /** Sparse crackle: occasional ticks with tiny decay tails. Gap timing is
+   *  tunable — vinyl uses sparse ticks, fireside uses dense ones. */
+  _crackleBuffer(seconds, minGap = 0.06, varGap = 0.34) {
     const rate = this.ctx.sampleRate;
     const buf = this.ctx.createBuffer(1, rate * seconds, rate);
     const ch = buf.getChannelData(0);
     let i = 0;
     while (i < ch.length) {
-      // a tick roughly every 60–400 ms
-      i += Math.floor(rate * (0.06 + Math.random() * 0.34));
+      i += Math.floor(rate * (minGap + Math.random() * varGap));
       if (i >= ch.length) break;
       const amp = (0.25 + Math.random() * 0.75) * (Math.random() < 0.5 ? 1 : -1);
       const tail = 6 + Math.floor(Math.random() * 40);
@@ -96,6 +133,62 @@ export class Radio {
     return osc;
   }
 
+  /** Tonight's ambient texture. Every variant fades in from silence and
+   *  breathes slowly; all are filtered noise — nothing tonal, nothing loud. */
+  _buildAmbience(kind) {
+    const out = this.ctx.createGain();
+    out.gain.value = 0;
+    out.connect(this.master);
+    this.ambGain = out;
+
+    if (kind === "wind") {
+      // deep rushing noise with slow gusts in the filter
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 420; lp.Q.value = 0.6;
+      this._loopSource(this._pinkBuffer(6)).connect(lp);
+      lp.connect(out);
+      this._lfo(0.06, 160, lp.frequency);
+      out.gain.setTargetAtTime(0.034, this.ctx.currentTime, 2.5);
+      this._lfo(1 / 11, 0.018, out.gain);
+    } else if (kind === "crickets") {
+      // high chirps: noise through a sharp bandpass, gated by two slow
+      // gain stages in series (their modulations multiply into chirp bursts)
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 4300; bp.Q.value = 9;
+      const g1 = this.ctx.createGain(); g1.gain.value = 0.5;
+      this._loopSource(this._pinkBuffer(4)).connect(bp);
+      bp.connect(g1); g1.connect(out);
+      this._lfo(2.3, 0.5, g1.gain);      // chirp rate
+      this._lfo(0.13, 0.012, out.gain);  // long swells
+      out.gain.setTargetAtTime(0.016, this.ctx.currentTime, 3);
+      // plus a faint night floor so it isn't chirps over silence
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 300;
+      this._loopSource(this._pinkBuffer(5)).connect(lp);
+      lp.connect(out);
+    } else if (kind === "fire") {
+      // dense low ticks + a warm rumble underneath
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 1500;
+      this._loopSource(this._crackleBuffer(6, 0.015, 0.09)).connect(lp);
+      lp.connect(out);
+      const rumbleLp = this.ctx.createBiquadFilter();
+      rumbleLp.type = "lowpass"; rumbleLp.frequency.value = 140;
+      this._loopSource(this._pinkBuffer(5)).connect(rumbleLp);
+      rumbleLp.connect(out);
+      out.gain.setTargetAtTime(0.05, this.ctx.currentTime, 2.5);
+      this._lfo(1 / 9, 0.012, out.gain);
+    } else {
+      // rain (default): pink noise → deep lowpass, ~14s breath cycle
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 700; lp.Q.value = 0.4;
+      this._loopSource(this._pinkBuffer(6)).connect(lp);
+      lp.connect(out);
+      out.gain.setTargetAtTime(RAIN_BASE, this.ctx.currentTime, 2.5);
+      this._lfo(1 / 14, RAIN_BREATH, out.gain);
+    }
+  }
+
   /** Call from a user gesture (the "tune in" click) to satisfy autoplay rules. */
   start() {
     if (this.started) { this.ctx.resume?.(); return; }
@@ -108,6 +201,13 @@ export class Radio {
     this.master.gain.value = this.muted ? 0 : 1;
     this.master.connect(this.ctx.destination);
 
+    // analyser taps the master so the starfield can breathe with the music
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 512;
+    this._lvlBuf = new Uint8Array(this.analyser.fftSize);
+    this._lvl = 0;
+    this.master.connect(this.analyser);
+
     // warm air: deep filtered noise instead of a tonal drone — no pitch,
     // no beating, just the feeling of a quiet room (fades in over ~3s)
     this.air = this.ctx.createGain();
@@ -119,15 +219,9 @@ export class Radio {
     this.air.gain.setTargetAtTime(0.020, this.ctx.currentTime, 3);
     this._lfo(1 / 18, 0.007, this.air.gain);
 
-    // rain: pink noise → deep lowpass → breathing gain (~14s cycle)
-    const rainLp = this.ctx.createBiquadFilter();
-    rainLp.type = "lowpass"; rainLp.frequency.value = 700; rainLp.Q.value = 0.4;
-    this.rainGain = this.ctx.createGain();
-    this.rainGain.gain.value = 0;
-    this.rainGain.gain.setTargetAtTime(RAIN_BASE, this.ctx.currentTime, 2.5);
-    this._loopSource(this._pinkBuffer(6)).connect(rainLp);
-    rainLp.connect(this.rainGain); this.rainGain.connect(this.master);
-    this._lfo(1 / 14, RAIN_BREATH, this.rainGain.gain);
+    // tonight's weather: rain, wind, crickets, or fireside — rotates nightly
+    this.ambience = nightlyAmbience();
+    this._buildAmbience(this.ambience);
 
     // vinyl crackle, drifting slowly across the stereo field
     const cracklePan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
@@ -162,12 +256,23 @@ export class Radio {
     this.carrier.type = "sine"; this.carrier.frequency.value = 260;
     this.carrier.connect(this.carrierGain); this.carrier.start();
 
+    // whispers in the static: breathy band-limited noise, gated into
+    // syllable-like murmurs in tune() as a lock charges. Never intelligible —
+    // the words stay theirs until the reveal.
+    this.whisperGain = this.ctx.createGain();
+    this.whisperGain.gain.value = 0;
+    const wBp = this.ctx.createBiquadFilter();
+    wBp.type = "bandpass"; wBp.frequency.value = 1500; wBp.Q.value = 5;
+    this._loopSource(this._pinkBuffer(4)).connect(wBp);
+    wBp.connect(this.whisperGain);
+    this.whisperGain.connect(this.master);
+
     // lofi music bed through a dark, slowly-drifting lowpass
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.value = 0;
     this.musicFilter = this.ctx.createBiquadFilter();
     this.musicFilter.type = "lowpass";
-    this.musicFilter.frequency.value = 1700; // darker — playing from another room
+    this.musicFilter.frequency.value = this._toneHz(this.tone); // user-set sweep
     this.musicFilter.Q.value = 0.4;
     this._lfo(0.05, 220, this.musicFilter.frequency); // dreamy slow tone drift
     this.musicFilter.connect(this.musicGain);
@@ -209,6 +314,13 @@ export class Radio {
     const carrierLevel = near ? 0.045 * progress : 0;
     this.noiseGain.gain.setTargetAtTime(staticLevel, now, 0.2);
     this.carrierGain.gain.setTargetAtTime(carrierLevel, now, 0.2);
+    // whispers surface in the static as the lock charges: two slow sines
+    // multiplied make uneven, syllable-like bursts — speech-shaped, wordless
+    if (this.whisperGain) {
+      const syl = Math.max(0, Math.sin(now * 5.3) * Math.sin(now * 1.9));
+      const whisper = near && progress > 0.12 ? 0.055 * progress * syl : 0;
+      this.whisperGain.gain.setTargetAtTime(whisper, now, 0.07);
+    }
     if (this.carrier) this.carrier.frequency.setTargetAtTime(240 + progress * 80, now, 0.3);
     // the world leans back while a connection forms
     if (this.musicGain) {
@@ -226,6 +338,7 @@ export class Radio {
     const now = this.ctx.currentTime;
     this.noiseGain.gain.setTargetAtTime(0, now, 0.4);
     this.carrierGain.gain.setTargetAtTime(0, now, 0.5);
+    if (this.whisperGain) this.whisperGain.gain.setTargetAtTime(0, now, 0.15);
     if (this.musicGain) this.musicGain.gain.setTargetAtTime(MUSIC_BASE, now, 1.6);
     if (this.crackleGain) this.crackleGain.gain.setTargetAtTime(CRACKLE_BASE, now, 1.6);
   }

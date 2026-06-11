@@ -77,6 +77,10 @@ export class FrequencyField {
     this.strangers = [];
     this.dust = [];
     this.constStars = [];
+    this.trail = [];   // comet trail behind your light
+    this.pulses = [];  // echo pulses: other signals arriving in the field
+    this._meta = [];   // per-stranger {fade, lockScale} from message age
+    this._audioFn = null; // 0..1 music level for star twinkle sync
     this.you = { x: 0, y: 0, tx: 0, ty: 0 };
     this.lockProgress = 0;
     this.nearest = null;
@@ -103,6 +107,15 @@ export class FrequencyField {
   onFreq(fn) { this._cbFreq = fn; }
   onProgress(fn) { this._cbProg = fn; }
   onLock(fn) { this._cbLock = fn; }
+  /** fn() → 0..1 music level; stars breathe with it. */
+  setAudioLevel(fn) { this._audioFn = fn; }
+  /** Where the dial is right now. */
+  currentFreq() { return freqAt(this.you.x, this.w); }
+  /** A signal arriving somewhere out there (normalized coords optional). */
+  addPulse(nx = Math.random(), ny = Math.random()) {
+    this.pulses.push({ x: nx, y: ny, age: 0 });
+    if (this.pulses.length > 8) this.pulses.shift();
+  }
 
   setConfig(patch) {
     Object.assign(this.config, patch || {});
@@ -154,18 +167,27 @@ export class FrequencyField {
   }
 
   // ---- modes ----
-  startTuning(seed) {
+  /** meta[i] = { fade: 0..1 } — 1 is a fresh signal, lower is older/fainter
+   *  (drawn dimmer, and the lock radius shrinks so it takes steadier tuning). */
+  startTuning(seed, meta = []) {
     this.mode = "tuning";
     this.lockProgress = 0;
     this.lockedStranger = null;
     this.nearest = null;
     this.cam.scale = this.cam.tScale = 1;
     this._seed = seed || 1;
+    this._meta = meta;
+    this.trail = [];
+    this.pulses = [];
     this._spawnStrangers();
   }
 
   _spawnStrangers() {
     this.strangers = spawnStrangers(this._seed, this.config.strangerCount, this.w, this.h);
+    for (const s of this.strangers) {
+      const fade = this._meta[s.id]?.fade;
+      s.fade = typeof fade === "number" ? clamp(fade, 0.3, 1) : 1;
+    }
     return this.strangers.length;
   }
 
@@ -222,13 +244,30 @@ export class FrequencyField {
     // ease your light toward pointer (floaty)
     this.you.x = lerp(this.you.x, this.you.tx, 0.10);
     this.you.y = lerp(this.you.y, this.you.ty, 0.10);
+
+    // magnetic pull: near a stranger, their gravity gently takes over
+    if (this.mode === "tuning" && this.nearest) {
+      const d = dist(this.you.x, this.you.y, this.nearest.x, this.nearest.y);
+      const R = 150;
+      if (d < R && d > 0.5) {
+        const pull = 0.045 * (1 - d / R);
+        this.you.x += (this.nearest.x - this.you.x) * pull;
+        this.you.y += (this.nearest.y - this.you.y) * pull;
+      }
+    }
     this.cam.scale = lerp(this.cam.scale, this.cam.tScale, 0.05);
+
+    // music level for the breathing starfield
+    this._audio = this._audioFn ? clamp(this._audioFn(), 0, 1) : 0;
 
     this._paintBg(ctx, t);
     this._paintDust(ctx, t);
 
     if (this.mode === "tuning" || this.mode === "locked") {
       this._updateStrangers(t, dt);
+      this._updateTrail();
+      this._paintPulses(ctx, dt);
+      this._paintTrail(ctx);
       this._paintThreadsAndStrangers(ctx, t);
       this._paintYou(ctx, t);
       this._paintWaveform(ctx, t);
@@ -250,15 +289,51 @@ export class FrequencyField {
 
   _paintDust(ctx, t) {
     const { w, h } = this;
+    // stars breathe a little brighter with the music
+    const music = 0.85 + 0.5 * (this._audio || 0);
     for (const d of this.dust) {
       const tw = 0.5 + 0.5 * Math.sin(t * 0.8 + d.tw);
-      ctx.globalAlpha = d.a * (0.4 + 0.6 * tw);
+      ctx.globalAlpha = clamp(d.a * (0.4 + 0.6 * tw) * music, 0, 1);
       ctx.fillStyle = "#cfd6ff";
       ctx.beginPath();
       ctx.arc(d.x * w, d.y * h, d.r, 0, TAU);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  _updateTrail() {
+    this.trail.push({ x: this.you.x, y: this.you.y });
+    if (this.trail.length > 22) this.trail.shift();
+  }
+
+  _paintTrail(ctx) {
+    const n = this.trail.length;
+    if (n < 2) return;
+    for (let i = 0; i < n - 1; i++) {
+      const p = this.trail[i];
+      const f = i / n; // older → smaller, dimmer
+      this._glow(ctx, p.x, p.y, 4 + 12 * f, this.config.you, 0.10 * f * f);
+    }
+  }
+
+  _paintPulses(ctx, dt) {
+    const { w, h } = this;
+    for (const p of this.pulses) {
+      p.age += dt;
+      const f = p.age / 3; // 3s life
+      if (f >= 1) continue;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = this.config.them;
+      ctx.globalAlpha = (1 - f) * 0.22;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, 8 + f * 70, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    this.pulses = this.pulses.filter((p) => p.age / 3 < 1);
   }
 
   _updateStrangers(t, dt) {
@@ -275,7 +350,9 @@ export class FrequencyField {
         if (d < bd) { bd = d; best = s; }
       }
       this.nearest = best;
-      const near = best && bd < LOCK_R && this._pointerInside;
+      // older signals are harder to hold: their lock radius shrinks
+      const lockR = best ? LOCK_R * (0.7 + 0.3 * (best.fade ?? 1)) : LOCK_R;
+      const near = best && bd < lockR && this._pointerInside;
       this.lockProgress = stepLockProgress(this.lockProgress, near, dt);
       this._near = near;
       this._nearDist = bd;
@@ -307,7 +384,9 @@ export class FrequencyField {
     const locked = this.lockedStranger;
     for (const s of this.strangers) {
       const isLockedOne = locked && s.id === locked.id;
-      const dimmed = locked && !isLockedOne ? 0.18 : 1;
+      // signal decay: older messages glow fainter
+      const age = isLockedOne ? 1 : (0.45 + 0.55 * (s.fade ?? 1));
+      const dimmed = (locked && !isLockedOne ? 0.18 : 1) * age;
       const tw = 0.6 + 0.4 * Math.sin(t * 1.4 + s.twinkle);
       // halo
       this._glow(ctx, s.x, s.y, 34, this.config.them, 0.22 * dimmed * tw);

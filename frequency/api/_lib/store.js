@@ -92,12 +92,18 @@ export async function getSignals(promptId, n = 7) {
 
   const real = messages
     .slice(-60)
-    .map((mm) => ({ id: mm.id, text: mm.text, name: mm.name || null, ago: relAgo(mm.ts), real: true }));
+    .map((mm) => ({
+      id: mm.id, text: mm.text, name: mm.name || null,
+      ago: relAgo(mm.ts),
+      ageDays: Math.max(0, (Date.now() - mm.ts) / 86400000),
+      real: true,
+    }));
   // shuffle real, then top up from seeds (which are timeless)
   shuffle(real);
 
   const seeds = SEEDS[promptId].map((text, i) => ({
-    id: "seed-" + i, text, name: null, ago: seedAgo(i, promptId), real: false,
+    id: "seed-" + i, text, name: null,
+    ago: seedAgo(i, promptId), ageDays: seedAgeDays(i, promptId), real: false,
   }));
   shuffle(seeds);
 
@@ -136,10 +142,14 @@ export async function removeSignal(promptId, id) {
   catch { return { removed: false }; }
 }
 
-// deterministic-ish variety for seed timestamps
+// deterministic-ish variety for seed timestamps; AGE_DAYS mirrors AGO_OPTS
+const AGO_OPTS = ["4 minutes ago", "26 minutes ago", "an hour ago", "2 hours ago", "5 hours ago", "last night", "yesterday", "3 days ago"];
+const AGE_DAYS = [0.003, 0.018, 0.042, 0.083, 0.21, 0.6, 1, 3];
 function seedAgo(i, promptId) {
-  const opts = ["4 minutes ago", "26 minutes ago", "an hour ago", "2 hours ago", "5 hours ago", "last night", "yesterday", "3 days ago"];
-  return opts[(hashStr(promptId) + i * 7) % opts.length];
+  return AGO_OPTS[(hashStr(promptId) + i * 7) % AGO_OPTS.length];
+}
+function seedAgeDays(i, promptId) {
+  return AGE_DAYS[(hashStr(promptId) + i * 7) % AGE_DAYS.length];
 }
 
 function shuffle(arr) {

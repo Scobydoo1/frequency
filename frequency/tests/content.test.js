@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seededInt, agoFor, PROMPTS, nightlyPrompt, nightlyTrack, TRACKS } from "../src/content.js";
+import { seededInt, agoFor, PROMPTS, PALETTE, paletteFor, nightlyPrompt, nightlyTrack, TRACKS, nightlyAmbience, AMBIENCES } from "../src/content.js";
 
 describe("seededInt", () => {
   it("always stays within [lo, hi] (Math.imul sign regression)", () => {
@@ -54,5 +54,32 @@ describe("nightlyTrack", () => {
     const ids = new Set();
     for (let i = 0; i < 30; i++) ids.add(nightlyTrack(new Date(Date.UTC(2026, 5, 1 + i))).slug);
     expect(ids.size).toBeGreaterThan(1);
+  });
+});
+
+describe("nightlyAmbience", () => {
+  it("is stable within a day and one of the known textures", () => {
+    const a = nightlyAmbience(new Date("2026-06-11T08:00:00Z"));
+    expect(a).toBe(nightlyAmbience(new Date("2026-06-11T21:00:00Z")));
+    expect(AMBIENCES).toContain(a);
+  });
+  it("rotates across days", () => {
+    const seen = new Set();
+    for (let i = 0; i < 30; i++) seen.add(nightlyAmbience(new Date(Date.UTC(2026, 5, 1 + i))));
+    expect(seen.size).toBeGreaterThan(1);
+  });
+});
+
+describe("paletteFor", () => {
+  it("gives every prompt a complete palette", () => {
+    for (const p of PROMPTS) {
+      const pal = paletteFor(p.id);
+      for (const k of ["bg", "bg2", "you", "them", "thread"]) {
+        expect(pal[k]).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+    }
+  });
+  it("falls back to the default for unknown ids", () => {
+    expect(paletteFor("nope")).toEqual(PALETTE);
   });
 });

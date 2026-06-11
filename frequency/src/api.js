@@ -21,7 +21,12 @@ function localSignals(prompt, n) {
   while (pool.length && out.length < Math.max(3, Math.min(14, n))) {
     s = (s * 1103515245 + 12345) & 0x7fffffff;
     const text = pool.splice(s % pool.length, 1)[0];
-    out.push({ id: "seed-local", text, name: null, ago: agoFor(out.length, seed), real: false });
+    out.push({
+      id: "seed-local", text, name: null,
+      ago: agoFor(out.length, seed),
+      ageDays: seededInt(seed + out.length * 13, 0, 300) / 100, // 0–3 days
+      real: false,
+    });
   }
   return {
     messages: out,

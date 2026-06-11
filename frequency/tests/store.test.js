@@ -35,3 +35,15 @@ describe("store (no-blob fallback)", () => {
     expect(a.count).not.toBe(b.count);
   });
 });
+
+describe("ageDays on signals", () => {
+  it("seeds carry bounded ageDays for the decay mechanic", async () => {
+    const { getSignals } = await import("../api/_lib/store.js");
+    const { messages } = await getSignals("letgo", 14);
+    for (const m of messages) {
+      expect(typeof m.ageDays).toBe("number");
+      expect(m.ageDays).toBeGreaterThanOrEqual(0);
+      expect(m.ageDays).toBeLessThanOrEqual(7);
+    }
+  });
+});

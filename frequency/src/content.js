@@ -1,8 +1,8 @@
 /* FREQUENCY — content helpers. Prompts/palette come from the shared module
  * so the backend seed store stays in lockstep. */
-import { PROMPTS, PALETTE } from "../shared/prompts.js";
+import { PROMPTS, PALETTE, PROMPT_PALETTES, paletteFor } from "../shared/prompts.js";
 
-export { PROMPTS, PALETTE };
+export { PROMPTS, PALETTE, PROMPT_PALETTES, paletteFor };
 
 export const STRANGER_COUNT = 7;
 export const MOTION = 1;
@@ -58,4 +58,13 @@ export function nightlyTrack(now = new Date()) {
   const day = Math.floor(now.getTime() / 86400000);
   // offset the seed so the track and prompt rotations don't stay in sync
   return TRACKS[seededInt(day + 7, 0, TRACKS.length - 1)];
+}
+
+/* Tonight's weather: which ambient texture plays under the record.
+ * Rotates nightly like the prompt and the track, each on its own offset. */
+export const AMBIENCES = ["rain", "wind", "crickets", "fire"];
+
+export function nightlyAmbience(now = new Date()) {
+  const day = Math.floor(now.getTime() / 86400000);
+  return AMBIENCES[seededInt(day + 3, 0, AMBIENCES.length - 1)];
 }

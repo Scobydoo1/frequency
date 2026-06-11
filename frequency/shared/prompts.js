@@ -72,3 +72,21 @@ export const PALETTE = {
   bg: "#0d0b1f", bg2: "#05040d",
   you: "#f4b860", them: "#9fc6ff", thread: "#dff1ff",
 };
+
+/* Each prompt colors the whole night — the four palettes from the original
+ * design handoff, matched to each prompt's mood. The intro always uses the
+ * default Cosmic Indigo; the field shifts when you tune in. */
+export const PROMPT_PALETTES = {
+  // longing, warm — Ember Dusk
+  letgo:     { bg: "#1c0f12", bg2: "#0a0506", you: "#ffb27a", them: "#ff8fae", thread: "#ffe6d5" },
+  // secrets in deep space — Cosmic Indigo (the default)
+  neversaid: { bg: "#0d0b1f", bg2: "#05040d", you: "#f4b860", them: "#9fc6ff", thread: "#dff1ff" },
+  // sleepless monochrome — Noir Signal
+  threeam:   { bg: "#0c0c0e", bg2: "#050506", you: "#f5f5f0", them: "#8a8a99", thread: "#ffffff" },
+  // the other life, sea-changed — Deep Teal
+  almost:    { bg: "#04161a", bg2: "#010a0c", you: "#ffd27a", them: "#6fe3d0", thread: "#d6fff6" },
+};
+
+export function paletteFor(promptId) {
+  return PROMPT_PALETTES[promptId] || PALETTE;
+}

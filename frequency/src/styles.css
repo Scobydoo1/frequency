@@ -209,6 +209,57 @@ body {
   font-size: 10.5px; letter-spacing: .12em;
   color: var(--ink-dim); opacity: .75; margin-top: 6px;
 }
+
+/* tone knob */
+.tone {
+  position: absolute; right: 18px; bottom: 18px; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  opacity: 0; pointer-events: none; transition: opacity .6s ease;
+}
+.tone.on { opacity: .55; pointer-events: auto; }
+.tone:hover { opacity: .9; }
+.tone-label {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--ink-dim);
+}
+.tone input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 110px; height: 2px; background: rgba(255,255,255,.18);
+  border-radius: 2px; outline: none; cursor: pointer;
+}
+.tone input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--you); box-shadow: 0 0 10px var(--you);
+}
+.tone input[type="range"]::-moz-range-thumb {
+  width: 11px; height: 11px; border: none; border-radius: 50%;
+  background: var(--you); box-shadow: 0 0 10px var(--you);
+}
+
+/* sky map + logbook */
+.skymap {
+  width: 100%; max-width: 440px; aspect-ratio: 5/3;
+  background: radial-gradient(ellipse at 50% 40%, rgba(255,255,255,.05), rgba(0,0,0,0) 70%);
+  border: 1px solid rgba(255,255,255,.08); border-radius: 14px;
+  margin: 6px 0 4px;
+}
+.skystar { cursor: pointer; outline: none; }
+.skystar-halo { fill: var(--them); opacity: .12; transition: opacity .3s; }
+.skystar-core { fill: var(--them); opacity: .9; }
+.skystar-ring { fill: none; stroke: var(--you); stroke-width: .8; opacity: .7; }
+.skystar:hover .skystar-halo, .skystar:focus .skystar-halo { opacity: .3; }
+.skystar.sel .skystar-halo { fill: var(--thread); opacity: .35; }
+.skystar.sel .skystar-core { fill: var(--thread); }
+.logbook {
+  width: 100%; max-width: 440px; text-align: left;
+  border-top: 1px dashed rgba(255,255,255,.16);
+  padding-top: 12px; display: grid; gap: 8px;
+}
+.logbook-stamp {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--you); opacity: .85;
+}
 .linklike {
   background: none; border: none; cursor: pointer;
   font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;

@@ -2,10 +2,19 @@
  * radio sound, the signal backend, and the local journal. */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FrequencyField } from "./engine/field-engine.js";
-import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack } from "./content.js";
+import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack, paletteFor } from "./content.js";
 import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
-import { loadJournal, addEncounter, formatWhen } from "./journal.js";
+import { loadJournal, addEncounter, formatWhen, starPosition } from "./journal.js";
+
+/* the page chrome follows the field's palette */
+function applyCssPalette(pal) {
+  const r = document.documentElement;
+  r.style.setProperty("--you", pal.you);
+  r.style.setProperty("--them", pal.them);
+  r.style.setProperty("--thread", pal.thread);
+  r.style.setProperty("--bg", pal.bg);
+}
 
 export default function App() {
   const tonight = nightlyPrompt();
@@ -21,6 +30,8 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
   const [journal, setJournal] = useState([]);
+  const [journalSel, setJournalSel] = useState(0);
+  const [tone, setTone] = useState(40);
   const [sent, setSent] = useState({ persisted: false, done: false, note: "" });
   const [shareNote, setShareNote] = useState("");
   const [sigName, setSigName] = useState(() => {
@@ -35,6 +46,7 @@ export default function App() {
   const screenRef = useRef(screen); screenRef.current = screen;
   const assignedRef = useRef(assigned); assignedRef.current = assigned;
   const statusRef = useRef("searching");
+  const countRef = useRef(0); // last seen tuned-tonight count, for echo pulses
 
   /* init engine + radio once */
   useEffect(() => {
@@ -47,6 +59,8 @@ export default function App() {
     radioRef.current = radio;
     window.__radio = radio; // debug handle
     setMuted(radio.isMuted());
+    setTone(Math.round(radio.getTone() * 100));
+    f.setAudioLevel(() => radio.level()); // stars breathe with the music
 
     f.onFreq((mhz) => { if (freqRef.current) freqRef.current.textContent = mhz.toFixed(1); });
     f.onProgress((p, near) => {
@@ -57,7 +71,7 @@ export default function App() {
     f.onLock((stranger) => {
       if (screenRef.current !== "tuning") return;
       const sig = assignedRef.current[stranger.id] || { text: "—", ago: "", id: "", real: false };
-      setReveal(sig);
+      setReveal({ ...sig, freq: f.currentFreq().toFixed(1) });
       setReported(false);
       radio.chime();
       radio.silenceStatic();
@@ -77,14 +91,45 @@ export default function App() {
     const p = nightlyPrompt();
     setPrompt(p);
     setStatus("searching"); statusRef.current = "searching";
+    // tonight's prompt colors the whole field
+    const pal = paletteFor(p.id);
+    applyCssPalette(pal);
+    fieldRef.current.setConfig({ ...pal, strangerCount: STRANGER_COUNT, motion: MOTION });
     // fetch tonight's real (or curated) signals
     const data = await fetchSignals(p, STRANGER_COUNT);
     setAssigned(data.messages);
     setCount(data.count);
+    countRef.current = data.count;
+    // signal decay: older messages spawn fainter, harder-to-hold strangers
+    const meta = data.messages.map((m) => ({
+      fade: 1 - Math.min(0.7, ((m.ageDays || 0) / 7) * 0.7),
+    }));
     const newSeed = Math.floor(Math.random() * 1e6) + 1;
-    fieldRef.current.startTuning(newSeed);
+    fieldRef.current.startTuning(newSeed, meta);
     setScreen("tuning");
   }, []);
+
+  /* echo pulses while tuning: a ring when the real count ticks up, plus a
+   * soft ambient heartbeat so the dark never feels empty */
+  useEffect(() => {
+    if (screen !== "tuning") return;
+    let alive = true;
+    let ambientTimer;
+    const ambient = () => {
+      if (!alive) return;
+      fieldRef.current?.addPulse();
+      ambientTimer = setTimeout(ambient, 12000 + Math.random() * 23000);
+    };
+    ambientTimer = setTimeout(ambient, 7000 + Math.random() * 9000);
+    const poll = setInterval(async () => {
+      const d = await fetchSignals(prompt, 3);
+      if (alive && d.count > countRef.current) {
+        countRef.current = d.count;
+        fieldRef.current?.addPulse(); // someone, somewhere, actually tuned in
+      }
+    }, 45000);
+    return () => { alive = false; clearTimeout(ambientTimer); clearInterval(poll); };
+  }, [screen, prompt]);
 
   const goConstellation = useCallback(async () => {
     const mine = draft.trim();
@@ -100,6 +145,7 @@ export default function App() {
       promptLabel: prompt.label,
       received: reveal.text, receivedName: reveal.name || null,
       given: mine, givenName: signed,
+      freq: reveal.freq || null,
     }));
     if (mine) {
       const res = await submitSignal(prompt, mine, signed);
@@ -121,12 +167,23 @@ export default function App() {
   const playAgain = useCallback(() => {
     setDraft(""); setMyMsg(""); setReveal({ text: "", ago: "", id: "", real: false });
     setShareNote("");
+    applyCssPalette(PALETTE); // the intro always wears Cosmic Indigo
+    fieldRef.current.setConfig({ ...PALETTE });
     fieldRef.current.reset();
     radioRef.current?.silenceStatic();
     setScreen("intro");
   }, []);
 
-  const openJournal = useCallback(() => { setJournal(loadJournal()); setJournalOpen(true); }, []);
+  const openJournal = useCallback(() => {
+    setJournal(loadJournal());
+    setJournalSel(0);
+    setJournalOpen(true);
+  }, []);
+
+  const onTone = useCallback((v) => {
+    setTone(v);
+    radioRef.current?.setTone(v / 100);
+  }, []);
 
   const toggleMute = useCallback(() => {
     radioRef.current?.start();
@@ -152,6 +209,16 @@ export default function App() {
       <button className="mute" onClick={toggleMute} aria-label={muted ? "unmute" : "mute"}>
         {muted ? "♪̸ sound off" : "♪ sound on"}
       </button>
+
+      {/* tone knob: sweep the music's lowpass like a radio's tone dial */}
+      <div className={"tone " + (screen !== "intro" ? "on" : "")}>
+        <span className="tone-label">tone</span>
+        <input
+          type="range" min="0" max="100" value={tone}
+          onChange={(e) => onTone(+e.target.value)}
+          aria-label="music tone"
+        />
+      </div>
 
       {/* persistent frequency HUD during tuning */}
       <div className={"hud " + (screen === "tuning" ? "on" : "")}>
@@ -204,7 +271,10 @@ export default function App() {
         <div className="reveal">
           <div className="kicker">YOU FOUND SOMEONE · {prompt.label}</div>
           <blockquote className="msg">“{reveal.text}”</blockquote>
-          <div className="attr">— {reveal.name || "a stranger"}{reveal.ago ? `, ${reveal.ago}` : ""}</div>
+          <div className="attr">
+            — {reveal.name || "a stranger"}{reveal.ago ? `, ${reveal.ago}` : ""}
+            {reveal.freq ? ` · ${reveal.freq} FM` : ""}
+          </div>
           <button className="btn primary" onClick={() => setScreen("give")}>
             leave your signal
           </button>
@@ -285,28 +355,57 @@ export default function App() {
         </div>
       </Screen>
 
-      {/* JOURNAL overlay */}
+      {/* JOURNAL — sky map of strangers + radio operator's logbook */}
       {journalOpen && (
         <div className="journal-overlay" onClick={(e) => { if (e.target.classList.contains("journal-overlay")) setJournalOpen(false); }}>
           <div className="journal">
             <div className="kicker">YOUR CONSTELLATION</div>
-            <p className="journal-sub">every stranger you've found, and what you left them.</p>
+            <p className="journal-sub">every stranger you've found is a star. tap one to reread.</p>
             {journal.length === 0 ? (
               <p className="journal-empty">No encounters yet. Tune in to begin.</p>
             ) : (
-              <div className="journal-list">
-                {journal.map((e, i) => (
-                  <div className="journal-entry" key={i}>
-                    <div className="journal-when">{formatWhen(e.ts)} · {e.promptLabel}</div>
-                    {e.received && (
-                      <div className="journal-recv">“{e.received}”{e.receivedName ? ` — ${e.receivedName}` : ""}</div>
+              <>
+                <svg className="skymap" viewBox="0 0 400 240" role="list" aria-label="your constellation">
+                  {journal.map((e, i) => {
+                    const p = starPosition(e, i);
+                    const sel = i === journalSel;
+                    return (
+                      <g
+                        key={i} role="listitem" tabIndex={0}
+                        className={"skystar" + (sel ? " sel" : "")}
+                        transform={`translate(${p.x * 400} ${p.y * 240})`}
+                        onClick={() => setJournalSel(i)}
+                        onKeyDown={(ev) => { if (ev.key === "Enter") setJournalSel(i); }}
+                      >
+                        <circle className="skystar-halo" r={sel ? 11 : 8} />
+                        <circle className="skystar-core" r={sel ? 3.4 : 2.4} />
+                        {e.given && <circle className="skystar-ring" r={sel ? 6.4 : 5} />}
+                      </g>
+                    );
+                  })}
+                </svg>
+                {journal[journalSel] && (
+                  <div className="logbook">
+                    <div className="logbook-stamp">
+                      ENTRY {String(journal.length - journalSel).padStart(2, "0")}
+                      {" · "}{journal[journalSel].freq ? `${journal[journalSel].freq} FM` : "——.— FM"}
+                      {" · "}{formatWhen(journal[journalSel].ts)}
+                      {" · "}{journal[journalSel].promptLabel}
+                    </div>
+                    {journal[journalSel].received && (
+                      <div className="journal-recv">
+                        “{journal[journalSel].received}”
+                        {journal[journalSel].receivedName ? ` — ${journal[journalSel].receivedName}` : " — a stranger"}
+                      </div>
                     )}
-                    {e.given && (
-                      <div className="journal-given">you{e.givenName ? ` (${e.givenName})` : ""}: “{e.given}”</div>
+                    {journal[journalSel].given && (
+                      <div className="journal-given">
+                        you{journal[journalSel].givenName ? ` (${journal[journalSel].givenName})` : ""}: “{journal[journalSel].given}”
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
             <button className="btn ghost" onClick={() => setJournalOpen(false)}>close</button>
           </div>

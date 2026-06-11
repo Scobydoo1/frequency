@@ -51,7 +51,7 @@ prompt, leave your own — signed or anonymous — for whoever comes next.
 | `src/sound.js` | The whole soundscape; nightly record selection | `content.js` |
 | `src/content.js` | Prompts, palettes, nightly prompt + track rotation | `shared/prompts.js` |
 | `src/api.js` | All network I/O; 4s timeouts; local fallback payloads | `content.js` |
-| `src/journal.js` | localStorage journal of encounters | — |
+| `src/journal.js` | localStorage journal of encounters; sky-map star positions | — |
 | `src/App.jsx` | Screen state machine; wires everything | all of the above |
 | `api/_lib/moderation.js` | Pure text/name moderation (unit-tested) | — |
 | `api/_lib/store.js` | Persistence adapter over Vercel Blob | `seeds.js`, `moderation.js` |
@@ -59,9 +59,12 @@ prompt, leave your own — signed or anonymous — for whoever comes next.
 
 ## Nightly rotation
 
-Both the prompt and the lofi record are chosen by hashing the day number
-(`floor(epoch / 86400000)`), so everyone on Earth shares the same frequency
-for ~24h, then it rotates. Tracks (all CC0, license verified on opengameart.org;
+The prompt, the lofi record, **and the ambient weather** (rain / wind /
+crickets / fireside) are each chosen by hashing the day number
+(`floor(epoch / 86400000)`) with different offsets, so everyone on Earth
+shares the same frequency for ~24h, then it rotates. The prompt also colors
+the whole field — each of the four prompts wears one of the original design's
+palettes (Ember Dusk, Cosmic Indigo, Noir Signal, Deep Teal). Tracks (all CC0, license verified on opengameart.org;
 MP3 required because iOS can't decode OGG):
 
 1. "Chill lofi inspired" — omfgdude (seamless loop edit: qubodup) — MP3 + OGG
