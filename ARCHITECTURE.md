@@ -102,6 +102,15 @@ npx vercel deploy --prod --yes   # deploy (run from frequency/)
 - **Service worker note:** after a deploy, an already-open client serves the
   previous shell until its next load.
 
+## Known trade-off: last-writer-wins per prompt
+
+Each prompt's messages live in one JSON blob, so two writes in the same few
+seconds can race (Blob list/fetch is eventually consistent); the loser's
+update is dropped. Fine at current scale — a lost message costs one player a
+"persisted" note, a lost report retries on the next flag. If traffic grows,
+move to one-blob-per-message or a real database (the `store.js` adapter is
+the only file that changes).
+
 ## Future work (documented, deliberately out of scope)
 
 Per-IP rate limiting, admin moderation view, message archive of past nights,
