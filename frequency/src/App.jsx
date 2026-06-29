@@ -2,7 +2,7 @@
  * radio sound, the signal backend, and the local journal. */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FrequencyField } from "./engine/field-engine.js";
-import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack, paletteFor } from "./content.js";
+import { PALETTE, STRANGER_COUNT, MOTION, TRACKS, nightlyPrompt, nightlyTrack, trackBySlug, paletteFor } from "./content.js";
 import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
 import { loadJournal, addEncounter, formatWhen, starPosition } from "./journal.js";
@@ -34,6 +34,9 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("searching");
   const [muted, setMuted] = useState(false);
+  const [trackSlug, setTrackSlug] = useState(() => {
+    try { return localStorage.getItem("frequency.track.v1") || ""; } catch { return ""; }
+  });
   const [journalOpen, setJournalOpen] = useState(false);
   const [journal, setJournal] = useState([]);
   const [journalSel, setJournalSel] = useState(0);
@@ -292,6 +295,14 @@ export default function App() {
     setMuted(radioRef.current?.toggleMute() ?? false);
   }, []);
 
+  /* pick a record: "" follows the nightly rotation, a slug pins one track.
+   * Radio.setTrack swaps it live (and persists the choice). */
+  const onPickTrack = useCallback((slug) => {
+    setTrackSlug(slug);
+    radioRef.current?.start();
+    radioRef.current?.setTrack(slug ? trackBySlug(slug) : null);
+  }, []);
+
   const share = useCallback(async () => {
     const text = `Tonight on FREQUENCY, a stranger said: "${reveal.text}"`;
     const url = location.origin;
@@ -320,6 +331,22 @@ export default function App() {
           onChange={(e) => onTone(+e.target.value)}
           aria-label="music tone"
         />
+      </div>
+
+      {/* record selector — keep the nightly rotation or choose your own track */}
+      <div className="record">
+        <span className="record-label">record</span>
+        <select
+          className="record-select"
+          value={trackSlug}
+          onChange={(e) => onPickTrack(e.target.value)}
+          aria-label="choose the music"
+        >
+          <option value="">tonight's record (auto)</option>
+          {TRACKS.map((t) => (
+            <option key={t.slug} value={t.slug}>{t.title}</option>
+          ))}
+        </select>
       </div>
 
       {/* persistent frequency HUD during tuning */}
@@ -362,7 +389,11 @@ export default function App() {
             </div>
             <span className="fineprint">headphones &amp; a quiet minute recommended</span>
             <span className="fineprint credits">
-              tonight's record: "{nightlyTrack().title}" · {nightlyTrack().artist} · cc0
+              {(() => {
+                const t = trackSlug ? trackBySlug(trackSlug) : nightlyTrack();
+                const label = trackSlug ? "now playing" : "tonight's record";
+                return `${label}: "${t.title}" · ${t.artist} · cc0`;
+              })()}
             </span>
             {broadcast && (
               <span className="fineprint broadcast" data-live={broadcast === "live"}>

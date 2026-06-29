@@ -15,10 +15,11 @@
  * Everything is gated behind a user gesture (autoplay policy) and a persisted
  * mute toggle. No audio files except the music — every texture is synthesized.
  */
-import { nightlyTrack, nightlyAmbience } from "./content.js";
+import { nightlyTrack, nightlyAmbience, trackBySlug } from "./content.js";
 
 const MUTE_KEY = "frequency.muted.v1";
 const TONE_KEY = "frequency.tone.v1";
+const TRACK_KEY = "frequency.track.v1"; // chosen record slug; "" = nightly rotation
 const TONE_DEFAULT = 0.4; // ≈1700Hz on the 600–8000Hz sweep
 
 const MUSIC_BASE = 0.30;   // resting music level
@@ -33,7 +34,17 @@ export class Radio {
     this.started = false;
     this.muted = this._loadMuted();
     this.tone = this._loadTone();
+    this.pendingTrack = this._loadTrack(); // null = nightly rotation
+    this.musicSrc = null;
     this.nodes = {};
+  }
+
+  /** The saved record choice, or null to follow the nightly rotation. */
+  _loadTrack() {
+    try {
+      const slug = localStorage.getItem(TRACK_KEY);
+      return slug ? trackBySlug(slug) : null;
+    } catch { return null; }
   }
 
   _loadTone() {
@@ -282,16 +293,17 @@ export class Radio {
     this.started = true;
   }
 
-  async _loadMusic() {
+  async _loadMusic(track = this.pendingTrack || nightlyTrack(), fadeIn = 4) {
     try {
-      const track = nightlyTrack();
-      this.track = track; // exposed so the UI can show tonight's record
+      this.track = track; // exposed so the UI can show the current record
       const probe = document.createElement("audio");
       const canOgg = !!probe.canPlayType('audio/ogg; codecs="vorbis"');
       const useOgg = canOgg && track.ogg;
       const url = useOgg ? track.ogg : track.mp3;
       const buf = await fetch(url).then((r) => r.arrayBuffer());
       const audio = await this.ctx.decodeAudioData(buf);
+      // swapping records: stop the one that's playing now
+      if (this.musicSrc) { try { this.musicSrc.stop(); } catch { /* already stopped */ } this.musicSrc = null; }
       const src = this.ctx.createBufferSource();
       src.buffer = audio;
       src.loop = true;
@@ -301,10 +313,25 @@ export class Radio {
       }
       src.connect(this.musicFilter);
       src.start();
+      this.musicSrc = src;
       // very slow fade-in: the world arrives like falling asleep in reverse
-      this.musicGain.gain.setTargetAtTime(MUSIC_BASE, this.ctx.currentTime, 4);
+      this.musicGain.gain.setTargetAtTime(MUSIC_BASE, this.ctx.currentTime, fadeIn);
     } catch { /* no music — the synth radio still plays */ }
   }
+
+  /** Switch the record live. Pass a track object to pin it (persisted), or
+   *  null to go back to the nightly rotation. Safe to call before start(). */
+  setTrack(track) {
+    this.pendingTrack = track || null;
+    try { localStorage.setItem(TRACK_KEY, track?.slug || ""); } catch { /* ignore */ }
+    if (!this.ctx) return; // not playing yet — picks up on start()
+    // duck the current record out while the next one loads, then fade back in
+    this.musicGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    this._loadMusic(track || nightlyTrack(), 1.5);
+  }
+
+  /** The record currently loaded (or about to load), for the UI. */
+  getTrack() { return this.track || this.pendingTrack || nightlyTrack(); }
 
   /** progress 0..1, near = within lock radius. */
   tune(progress, near) {
