@@ -1,14 +1,16 @@
 /* Frontend client for accounts + friends. Cookie-based sessions; every call
  * fails soft so the game stays playable when the backend is unreachable. */
 const TIMEOUT_MS = 5000;
+// Backend is a separate origin (Render) in production.
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
-async function call(url, opts = {}) {
+async function call(path, opts = {}) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const r = await fetch(url, {
+    const r = await fetch(`${API_BASE}${path}`, {
       headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
+      credentials: "include",
       signal: ctrl.signal,
       ...opts,
     });
@@ -20,9 +22,9 @@ async function call(url, opts = {}) {
   }
 }
 
-/** { user: {callsign}|null, available: boolean } */
+/** { user: {callsign}|null, available: boolean, googleEnabled: boolean } */
 export async function me() {
-  return (await call("/api/auth")) || { user: null, available: false };
+  return (await call("/api/auth")) || { user: null, available: false, googleEnabled: false };
 }
 
 export async function register(callsign, password) {
@@ -44,6 +46,42 @@ export async function logout() {
     method: "POST",
     body: JSON.stringify({ action: "logout" }),
   })) || { ok: true };
+}
+
+/* ---------- Google: alternate sign-in / account recovery -----------
+ * The callsign stays the public identity; Google only resolves *which*
+ * callsign you are. See server/routes/auth.js for the full flow. */
+
+/** { ok, user } | { ok:true, needsCallsign:true, pendingToken } | { ok:false, reason } */
+export async function loginWithGoogle(idToken) {
+  return (await call("/api/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ idToken }),
+  })) || { ok: false, reason: "unreachable" };
+}
+
+/** Finishes signup for a brand-new Google identity by picking a callsign. */
+export async function completeGoogleSignup(pendingToken, callsign) {
+  return (await call("/api/auth/google/complete", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, callsign }),
+  })) || { ok: false, reason: "unreachable" };
+}
+
+/** Links Google to the signed-in callsign, enabling recovery later. */
+export async function linkGoogle(idToken) {
+  return (await call("/api/auth/google/link", {
+    method: "POST",
+    body: JSON.stringify({ idToken }),
+  })) || { ok: false, reason: "unreachable" };
+}
+
+/** Forgot your password? A verified Google identity sets a new one. */
+export async function recoverWithGoogle(idToken, newPassword) {
+  return (await call("/api/auth/recover", {
+    method: "POST",
+    body: JSON.stringify({ idToken, newPassword }),
+  })) || { ok: false, reason: "unreachable" };
 }
 
 /** { friends: [...], requests: [...] } */

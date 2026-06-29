@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getSignals, addSignal } from "../api/_lib/store.js";
+import { getSignals, addSignal } from "../lib/store.js";
 
-// no BLOB_READ_WRITE_TOKEN in test env → curated fallback path
-describe("store (no-blob fallback)", () => {
-  beforeEach(() => { delete process.env.BLOB_READ_WRITE_TOKEN; });
+// no DATABASE_URL in test env → curated fallback path
+describe("store (no-db fallback)", () => {
+  beforeEach(() => { delete process.env.DATABASE_URL; });
 
   it("returns curated messages and a stable nightly count", async () => {
     const a = await getSignals("letgo", 7);
@@ -38,7 +38,7 @@ describe("store (no-blob fallback)", () => {
 
 describe("ageDays on signals", () => {
   it("seeds carry bounded ageDays for the decay mechanic", async () => {
-    const { getSignals } = await import("../api/_lib/store.js");
+    const { getSignals } = await import("../lib/store.js");
     const { messages } = await getSignals("letgo", 14);
     for (const m of messages) {
       expect(typeof m.ageDays).toBe("number");

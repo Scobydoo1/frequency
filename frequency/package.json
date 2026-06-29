@@ -8,16 +8,24 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "cap:add:android": "cap add android",
+    "cap:add:ios": "cap add ios",
+    "cap:sync": "vite build && cap sync",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
     "@fontsource/ibm-plex-mono": "^5.2.5",
     "@fontsource/spectral": "^5.2.5",
-    "@vercel/blob": "^2.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "sharp": "^0.34.1",
     "vite": "^6.3.5",

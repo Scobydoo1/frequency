@@ -13,23 +13,39 @@ whole world shares, and a private journal of your encounters.
 ## Run locally
 
 ```sh
+# backend (separate terminal)
+cd server && npm install && cp .env.example .env && npm run dev   # http://localhost:8787
+
+# frontend
 npm install
-npm run dev          # http://localhost:5173 — frontend only (messages use local fallback)
-npx vercel dev       # http://localhost:3000 — frontend + /api functions together
+npm run dev           # http://localhost:5173 — proxies /api to the server above
 ```
+
+Messages still work with no backend running at all (local fallback payloads);
+accounts/friends require the server + `DATABASE_URL`.
 
 ## Test
 
 ```sh
-npm test             # vitest — engine math, moderation, store, content (32 tests)
+npm test                 # frontend: engine math, content
+(cd server && npm test)  # backend: auth, moderation, store
 ```
 
-## Build & deploy (free)
+## Build & deploy (free tiers)
+
+Frontend on **Vercel**, API on **Render**, database on **Neon** — see
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md#runbook) for the full first-deploy
+checklist and required env vars.
 
 ```sh
-npm run build        # static client in dist/, PWA precache included
-npx vercel --prod    # deploy client + serverless functions to Vercel free tier
+npm run build         # static client in dist/, PWA precache included
+npx vercel --prod     # deploy the static client (Vercel project root: frequency/)
 ```
+
+## Mobile app
+
+Already an installable PWA. To ship to app stores via Capacitor, see
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md#mobile-capacitor).
 
 ## Architecture
 
@@ -48,28 +64,29 @@ npx vercel --prod    # deploy client + serverless functions to Vercel free tier
 - `journal.js` — localStorage record of your encounters (never leaves the device).
 - `content.js` — frontend helpers incl. the date-seeded nightly prompt.
 
-**Backend (Vercel serverless functions, `api/`)**
-- `signals.js` — `GET /api/signals` (real + curated messages for a prompt, plus the
-  nightly count); `POST /api/signals` (moderate + store a new message).
-- `report.js` — `POST /api/report` (remove a flagged message).
-- `_lib/moderation.js` — pure sanitize/moderate (links, contact info, shouting,
-  hostility). `_lib/store.js` — Vercel Blob persistence with a curated fallback.
+**Backend (Express on Render, `server/`)**
+- `routes/signals.js` — `GET /api/signals` (real + curated messages for a prompt,
+  plus the nightly count); `POST /api/signals` (moderate + store a new message,
+  identity server-resolved from the session).
+- `routes/report.js` — `POST /api/report` (remove a flagged message).
+- `routes/auth.js` — register/login/logout (callsign + password) plus the Google
+  sign-in/recovery flow.
+- `routes/friends.js` — friend requests and friendships.
+- `lib/moderation.js` — pure sanitize/moderate (links, contact info, shouting,
+  hostility). `lib/store.js` — Postgres (Neon) persistence with a curated fallback.
+- `lib/google.js` — verifies a Google ID token server-side.
 
 **Shared (`shared/prompts.js`)** — the four prompts and their messages, the single
 source of truth imported by both the frontend and the backend seed store.
 
-### Shared messages (Vercel Blob)
+### Shared messages (Postgres / Neon)
 
-The backend persists real player messages to a **Vercel Blob** store when the
-`BLOB_READ_WRITE_TOKEN` env var is present. Without it (local dev, or before the
-store is linked) everything still works — reads serve curated seed messages and
-writes are accepted but not stored. To enable real persistence, link the Blob store
-to the project once (interactive):
-
-```sh
-npx vercel blob create-store frequency-signals --access public   # answer "link to frequency? y"
-npx vercel env pull                                               # pulls the token for local dev
-```
+The backend persists real player messages and accounts to a **Postgres** database
+(hosted free on [Neon](https://neon.tech)) when `DATABASE_URL` is present. Without
+it (local dev, or before the database is provisioned) everything still works —
+reads serve curated seed messages, writes are accepted but not stored, and
+accounts/friends are unavailable. See
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md#runbook) for setup.
 
 Mobile notes: touch input aims the light 48px above the finger; the lock releases
 when the finger lifts; screens stay above the on-screen keyboard via `visualViewport`.

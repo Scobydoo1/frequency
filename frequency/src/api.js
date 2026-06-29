@@ -4,6 +4,9 @@
 import { PROMPTS, agoFor, fmtCount, seededInt } from "./content.js";
 
 const TIMEOUT_MS = 4000;
+// Backend is a separate origin (Render) in production; same-origin in local
+// `vercel dev`-less setups falls back to relative paths.
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 async function withTimeout(promise, ms) {
   const ctrl = new AbortController();
@@ -38,7 +41,7 @@ function localSignals(prompt, n) {
 export async function fetchSignals(prompt, n = 7) {
   try {
     const data = await withTimeout(
-      (signal) => fetch(`/api/signals?prompt=${encodeURIComponent(prompt.id)}&n=${n}`, { signal })
+      (signal) => fetch(`${API_BASE}/api/signals?prompt=${encodeURIComponent(prompt.id)}&n=${n}`, { signal })
         .then((r) => (r.ok ? r.json() : Promise.reject())),
       TIMEOUT_MS
     );
@@ -52,10 +55,10 @@ export async function fetchSignals(prompt, n = 7) {
 export async function submitSignal(prompt, text, showName = false) {
   try {
     return await withTimeout(
-      (signal) => fetch("/api/signals", {
+      (signal) => fetch(`${API_BASE}/api/signals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
+        credentials: "include",
         body: JSON.stringify({ prompt: prompt.id, text, showName }),
         signal,
       }).then((r) => r.json()),
@@ -70,7 +73,7 @@ export async function submitSignal(prompt, text, showName = false) {
 export async function fetchHealth() {
   try {
     return await withTimeout(
-      (signal) => fetch("/api/health", { signal }).then((r) => r.json()),
+      (signal) => fetch(`${API_BASE}/api/health`, { signal }).then((r) => r.json()),
       TIMEOUT_MS
     );
   } catch {
@@ -81,9 +84,10 @@ export async function fetchHealth() {
 export async function reportSignal(prompt, id) {
   try {
     await withTimeout(
-      (signal) => fetch("/api/report", {
+      (signal) => fetch(`${API_BASE}/api/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ prompt: prompt.id, id }),
         signal,
       }),
