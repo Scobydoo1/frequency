@@ -31,7 +31,14 @@ export function nightlyPrompt(now = new Date()) {
 /* Tonight's station: one lofi record per night, same for everyone.
  * All tracks CC0 / public domain from opengameart.org (licenses verified on
  * each track page). MP3 required (iOS can't decode OGG); OGG used where the
- * artist provided a seamless loop edit. */
+ * artist provided a seamless loop edit.
+ *
+ * ── To add a track (see docs/adding-music.md) ──
+ *   1. Drop the file(s) into  frequency/public/audio/  (e.g. my-track.mp3).
+ *      Use only CC0 / royalty-free music you're allowed to ship commercially.
+ *   2. Add one entry below: a unique `slug`, the `title`, the `artist`, and a
+ *      `mp3` path (optionally `ogg` for a seamless Chrome/Android loop).
+ *   It then appears in the record selector AND the nightly rotation automatically. */
 export const TRACKS = [
   {
     slug: "chill-lofi",
