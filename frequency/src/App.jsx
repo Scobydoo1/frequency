@@ -6,7 +6,12 @@ import { PALETTE, STRANGER_COUNT, MOTION, nightlyPrompt, nightlyTrack, paletteFo
 import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
 import { loadJournal, addEncounter, formatWhen, starPosition } from "./journal.js";
-import { me, register, login, logout, getFriends, friendAction, lastTunedLabel } from "./auth.js";
+import {
+  me, register, login, logout, getFriends, friendAction, lastTunedLabel,
+  loginWithGoogle, completeGoogleSignup,
+} from "./auth.js";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 /* the page chrome follows the field's palette */
 function applyCssPalette(pal) {
@@ -45,6 +50,9 @@ export default function App() {
   const [pwDraft, setPwDraft] = useState("");
   const [authErr, setAuthErr] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googlePending, setGooglePending] = useState(null); // pendingToken while picking a callsign
+  const googleBtnRef = useRef(null);
   const [showName, setShowName] = useState(() => {
     try { return localStorage.getItem("frequency.showname.v1") !== "0"; } catch { return true; }
   });
@@ -95,7 +103,7 @@ export default function App() {
       }, 750);
     });
     fetchHealth().then((h) => setBroadcast(h.ok && h.persisted ? "live" : "echo"));
-    me().then((m) => { setUser(m.user); setAuthAvailable(m.available); });
+    me().then((m) => { setUser(m.user); setAuthAvailable(m.available); setGoogleEnabled(!!m.googleEnabled); });
 
     return () => f.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +218,47 @@ export default function App() {
   }, [authMode, csDraft, pwDraft]);
 
   const doLogout = useCallback(async () => { await logout(); setUser(null); }, []);
+
+  /* Google is an alternate sign-in path; the callsign stays the public
+   * identity. A brand-new Google identity still has to pick one. */
+  const handleGoogleCredential = useCallback(async (idToken) => {
+    setAuthBusy(true); setAuthErr("");
+    const r = await loginWithGoogle(idToken);
+    setAuthBusy(false);
+    if (r.ok && r.user) { setUser(r.user); setGooglePending(null); setScreen("intro"); }
+    else if (r.ok && r.needsCallsign) { setGooglePending(r.pendingToken); setCsDraft(""); }
+    else setAuthErr(r.reason || "Google sign-in failed");
+  }, []);
+
+  const finishGoogleSignup = useCallback(async () => {
+    setAuthBusy(true); setAuthErr("");
+    const r = await completeGoogleSignup(googlePending, csDraft.trim().toLowerCase());
+    setAuthBusy(false);
+    if (r.ok) { setUser(r.user); setGooglePending(null); setCsDraft(""); setScreen("intro"); }
+    else setAuthErr(r.reason || "something went wrong");
+  }, [googlePending, csDraft]);
+
+  /* Render Google's own button into our DOM once its script + client id are
+   * ready; the GSI script is loaded from index.html. */
+  useEffect(() => {
+    if (!googleEnabled || !GOOGLE_CLIENT_ID || screen !== "operator" || googlePending) return;
+    let cancelled = false;
+    const tryRender = () => {
+      if (cancelled || !window.google?.accounts?.id || !googleBtnRef.current) return false;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (resp) => handleGoogleCredential(resp.credential),
+      });
+      googleBtnRef.current.innerHTML = "";
+      window.google.accounts.id.renderButton(googleBtnRef.current, {
+        theme: "filled_black", size: "large", shape: "pill", text: "continue_with", width: 280,
+      });
+      return true;
+    };
+    if (tryRender()) return;
+    const id = setInterval(() => { if (tryRender()) clearInterval(id); }, 200);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [googleEnabled, screen, googlePending, handleGoogleCredential]);
 
   const openFriends = useCallback(async () => {
     setFriendsOpen(true);
@@ -440,48 +489,84 @@ export default function App() {
       <Screen show={screen === "operator"}>
         <div className="operator">
           <div className="kicker">OPERATOR REGISTRATION</div>
-          <p className="operator-sub">
-            A callsign is how strangers find you again.<br/>
-            No email, no recovery — just a name in the dark.
-          </p>
-          <div className="operator-tabs">
-            <button
-              className={"linklike " + (authMode === "claim" ? "" : "dim")}
-              onClick={() => { setAuthMode("claim"); setAuthErr(""); }}
-            >claim a callsign</button>
-            <span className="fineprint">·</span>
-            <button
-              className={"linklike " + (authMode === "signin" ? "" : "dim")}
-              onClick={() => { setAuthMode("signin"); setAuthErr(""); }}
-            >sign in</button>
-          </div>
-          <input
-            className="operator-input"
-            type="text"
-            value={csDraft}
-            maxLength={16}
-            placeholder="callsign (a-z, 0-9, _ -)"
-            autoCapitalize="none" autoCorrect="off" spellCheck="false"
-            onChange={(e) => setCsDraft(e.target.value)}
-          />
-          <input
-            className="operator-input"
-            type="password"
-            value={pwDraft}
-            maxLength={72}
-            placeholder="password"
-            onChange={(e) => setPwDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doAuth(); } }}
-          />
-          <div className="operator-err">{authErr}</div>
-          <button
-            className="btn primary"
-            disabled={authBusy || !csDraft.trim() || !pwDraft}
-            onClick={doAuth}
-          >
-            {authBusy ? "…" : authMode === "claim" ? "go on air" : "tune back in"}
-          </button>
-          <button className="btn ghost" onClick={() => setScreen("intro")}>back</button>
+          {googlePending ? (
+            <>
+              <p className="operator-sub">
+                Your Google identity checked out.<br/>
+                Pick a callsign — that's the name strangers will know you by.
+              </p>
+              <input
+                className="operator-input"
+                type="text"
+                value={csDraft}
+                maxLength={16}
+                placeholder="callsign (a-z, 0-9, _ -)"
+                autoCapitalize="none" autoCorrect="off" spellCheck="false"
+                onChange={(e) => setCsDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); finishGoogleSignup(); } }}
+              />
+              <div className="operator-err">{authErr}</div>
+              <button
+                className="btn primary"
+                disabled={authBusy || !csDraft.trim()}
+                onClick={finishGoogleSignup}
+              >
+                {authBusy ? "…" : "go on air"}
+              </button>
+              <button className="btn ghost" onClick={() => { setGooglePending(null); setAuthErr(""); }}>back</button>
+            </>
+          ) : (
+            <>
+              <p className="operator-sub">
+                A callsign is how strangers find you again.<br/>
+                No email shown, ever — Google is just an optional way back in.
+              </p>
+              <div className="operator-tabs">
+                <button
+                  className={"linklike " + (authMode === "claim" ? "" : "dim")}
+                  onClick={() => { setAuthMode("claim"); setAuthErr(""); }}
+                >claim a callsign</button>
+                <span className="fineprint">·</span>
+                <button
+                  className={"linklike " + (authMode === "signin" ? "" : "dim")}
+                  onClick={() => { setAuthMode("signin"); setAuthErr(""); }}
+                >sign in</button>
+              </div>
+              <input
+                className="operator-input"
+                type="text"
+                value={csDraft}
+                maxLength={16}
+                placeholder="callsign (a-z, 0-9, _ -)"
+                autoCapitalize="none" autoCorrect="off" spellCheck="false"
+                onChange={(e) => setCsDraft(e.target.value)}
+              />
+              <input
+                className="operator-input"
+                type="password"
+                value={pwDraft}
+                maxLength={72}
+                placeholder="password"
+                onChange={(e) => setPwDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doAuth(); } }}
+              />
+              <div className="operator-err">{authErr}</div>
+              <button
+                className="btn primary"
+                disabled={authBusy || !csDraft.trim() || !pwDraft}
+                onClick={doAuth}
+              >
+                {authBusy ? "…" : authMode === "claim" ? "go on air" : "tune back in"}
+              </button>
+              {googleEnabled && GOOGLE_CLIENT_ID && (
+                <>
+                  <div className="operator-divider"><span>or</span></div>
+                  <div className="google-btn" ref={googleBtnRef} />
+                </>
+              )}
+              <button className="btn ghost" onClick={() => setScreen("intro")}>back</button>
+            </>
+          )}
         </div>
       </Screen>
 

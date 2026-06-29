@@ -3,6 +3,14 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Local dev convenience: proxy /api to `npm run dev` in server/ (port 8787)
+  // so the game works without setting VITE_API_URL. Unused in production —
+  // Vercel serves the static build only; the API lives on Render.
+  server: {
+    proxy: {
+      "/api": { target: "http://localhost:8787", changeOrigin: true },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -40,5 +48,6 @@ export default defineConfig({
   ],
   test: {
     environment: "node",
+    exclude: ["**/node_modules/**", "server/**"],
   },
 });

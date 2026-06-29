@@ -1,0 +1,21 @@
+{
+  "name": "frequency-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node migrate.js && node index.js",
+    "dev": "node --watch index.js",
+    "migrate": "node migrate.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.15.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.4"
+  }
+}

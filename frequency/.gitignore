@@ -3,5 +3,8 @@ dist/
 dev-dist/
 .vercel/
 *.local
+.env
+.env.*
+!.env.example
 
 .vercel

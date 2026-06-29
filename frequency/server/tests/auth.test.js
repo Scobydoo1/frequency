@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
   validateCallsign, validatePassword, hashPassword, verifyPassword,
-  signToken, verifyToken,
-} from "../api/_lib/auth.js";
+  signToken, verifyToken, signPendingGoogle, verifyPendingGoogle,
+} from "../lib/auth.js";
+
+describe("pending Google sign-up token", () => {
+  const SECRET = "test-secret";
+  it("round-trips sub + email and expires", () => {
+    const t = signPendingGoogle("sub-123", "person@example.com", SECRET);
+    expect(verifyPendingGoogle(t, SECRET)).toEqual({
+      sub: "sub-123", email: "person@example.com", exp: expect.any(Number),
+    });
+    expect(verifyPendingGoogle(t, "other-secret")).toBe(null);
+  });
+});
 
 describe("validateCallsign", () => {
   it("accepts and normalizes good callsigns", () => {

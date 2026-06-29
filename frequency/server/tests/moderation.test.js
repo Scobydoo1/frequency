@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moderate, moderateName, sanitize, signalId, MAX_LEN } from "../api/_lib/moderation.js";
+import { moderate, moderateName, sanitize, signalId, MAX_LEN } from "../lib/moderation.js";
 
 describe("sanitize", () => {
   it("collapses whitespace and trims", () => {

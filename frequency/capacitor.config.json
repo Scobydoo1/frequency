@@ -1,0 +1,8 @@
+{
+  "appId": "com.frequency.app",
+  "appName": "FREQUENCY",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
