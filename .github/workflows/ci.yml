@@ -21,3 +21,9 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+      # backend (separate package — Express API for Render)
+      - run: npm ci
+        working-directory: frequency/server
+      - run: npm test
+        working-directory: frequency/server
