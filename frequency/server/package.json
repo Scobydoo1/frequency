@@ -4,10 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node migrate.js && node index.js",
-    "dev": "node --watch index.js",
-    "migrate": "node migrate.js",
+    "start": "node --env-file-if-exists=.env migrate.js && node --env-file-if-exists=.env index.js",
+    "dev": "node --watch --env-file-if-exists=.env index.js",
+    "migrate": "node --env-file-if-exists=.env migrate.js",
     "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20.12"
   },
   "dependencies": {
     "cors": "^2.8.5",
