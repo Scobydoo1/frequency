@@ -264,6 +264,7 @@ are set. Add it whenever you're ready.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| **Can't find "sign in" / "sign out"** | The sign-in link only appears once accounts are available | It lives on the **intro screen footer** ("sign in · claim a callsign", and "{callsign} · sign out" once logged in). It stays **hidden until `DATABASE_URL` is set** on Render — finish Part 2 + Part 3 and it appears |
 | `/api/health` shows `persisted:false` on Render | `DATABASE_URL` not set or wrong | Re-check the Neon string in Render's env vars; redeploy |
 | Login seems to work but doesn't "stick" / CORS errors in browser console | `FRONTEND_ORIGIN` on Render doesn't match your Vercel URL | Set it exactly, no trailing slash (Part 4a) |
 | Frontend can't reach the API at all | `VITE_API_URL` missing/wrong on Vercel | Set it to the Render URL and **redeploy** |

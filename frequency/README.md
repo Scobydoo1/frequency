@@ -61,6 +61,8 @@ Already an installable PWA. To ship to app stores via Capacitor, see
   Music: "Chill lofi inspired" by omfgdude, seamless loop edit by qubodup —
   CC0 / public domain, from [OpenGameArt](https://opengameart.org/content/chill-lofi-inspired-loop-edit).
   OGG for Chrome/Android, MP3 fallback for iOS; cached at runtime for offline play.
+  A **record selector** (top-left) lets you keep the nightly rotation or pin a
+  specific track; the choice is persisted and the record swaps live.
 - `journal.js` — localStorage record of your encounters (never leaves the device).
 - `content.js` — frontend helpers incl. the date-seeded nightly prompt.
 

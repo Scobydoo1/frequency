@@ -60,6 +60,12 @@ export function nightlyTrack(now = new Date()) {
   return TRACKS[seededInt(day + 7, 0, TRACKS.length - 1)];
 }
 
+/** Look up a track by its slug, or null. Used by the manual track picker:
+ *  a null/missing pick means "let it rotate nightly" (nightlyTrack). */
+export function trackBySlug(slug) {
+  return TRACKS.find((t) => t.slug === slug) || null;
+}
+
 /* Tonight's weather: which ambient texture plays under the record.
  * Rotates nightly like the prompt and the track, each on its own offset. */
 export const AMBIENCES = ["rain", "wind", "crickets", "fire"];
