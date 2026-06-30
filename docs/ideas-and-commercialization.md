@@ -130,4 +130,38 @@ idea.
    user base to design them around.
 5. **#6 (printed keepsake)** whenever — it's independent of everything else.
 
+---
+
+## My recommendation
+
+If I had to pick just one to build first: **#9 (tip jar) immediately, then
+#3 (prompt packs) as the first real revenue feature** — skip starting with
+cosmetics (#1/#2), even though it's the obvious "freemium" instinct. Reasoning:
+
+- **#9 costs nothing to ship and tells you something real.** A Stripe Payment
+  Link behind a button is a day-zero action, not a roadmap item. If even a
+  trickle of people tip with zero reward attached, that's a stronger signal
+  of genuine attachment to the app than any survey — and it costs you nothing
+  to find out.
+- **Prompt packs (#3) beat cosmetics (#1/#2) as the first *built* feature**
+  because they're a **content** sale, not a **vanity** sale. A new palette or
+  chime is fun but optional-feeling; a "reunion" or "letting go" prompt pack
+  sells the actual emotional hook of the app — the prompt is the thing people
+  already come back for. It's also a one-time purchase (lower commitment than
+  a subscription, easier first sale) and it reuses data you already have
+  (`shared/prompts.js`), so it's cheap to build relative to what it's worth
+  charging for.
+- **Hold off on journal sync (#4), paired frequencies (#7), and recaps (#5)**
+  until there's a real returning user base — they're subscription-shaped
+  features, and subscriptions only convert once people have a habit to
+  protect. Building them before that habit exists risks shipping
+  infrastructure nobody asked for yet.
+- **Cosmetics (#1/#2) are still worth doing** — just as a *second* release
+  once prompt packs prove people will pay at all, not the opening move.
+
+In short: prove willingness-to-pay cheaply (#9), then sell the thing that's
+actually the product (#3), then build the subscription tier once there's a
+habit worth protecting (#4). Cosmetics and the rest are good follow-ups, not
+good openers.
+
 Nothing here is built until you pick one.
