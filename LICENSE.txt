@@ -1,0 +1,24 @@
+FREQUENCY Source Code License
+
+Copyright (c) 2026 Vo Thanh
+
+Upon purchase, the buyer is granted a non-exclusive, perpetual license to:
+- use, modify, and build upon this source code for personal or commercial
+  projects, including deploying it as a live product and charging users;
+- deploy unlimited instances for themselves or a single client per license.
+
+The buyer may NOT:
+- resell, redistribute, sublicense, or publicly publish the source code
+  (modified or not) as a source-code product, template, or starter kit;
+- claim original authorship of the unmodified work.
+
+The included music tracks are CC0/public domain (see frequency/README.md
+for attribution links) and are not restricted by this license.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
+USE OF THE SOFTWARE.
+
+Questions about this license: thanhkt2410@gmail.com

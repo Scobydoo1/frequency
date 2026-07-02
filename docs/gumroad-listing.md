@@ -140,28 +140,12 @@ atmospheric screenshots sell this product — avoid cropping out the starfield.
 
 ---
 
-## 6. LICENSE.txt to include in the zip (→ paste this into a new file)
+## 6. LICENSE.txt to include in the zip
 
-> FREQUENCY Source Code License
->
-> Copyright (c) [YEAR] [YOUR NAME]
->
-> Upon purchase, the buyer is granted a non-exclusive, perpetual license to:
-> - use, modify, and build upon this source code for personal or commercial
->   projects, including deploying it as a live product and charging users;
-> - deploy unlimited instances for themselves or a single client per license.
->
-> The buyer may NOT:
-> - resell, redistribute, sublicense, or publicly publish the source code
->   (modified or not) as a source-code product, template, or starter kit;
-> - claim original authorship of the unmodified work.
->
-> The included music tracks are CC0/public domain (see frequency/README.md
-> for attribution links) and are not restricted by this license.
->
-> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+Already at the repo root as [`LICENSE.txt`](../LICENSE.txt) — nothing to
+create by hand, the packaging command in section 7 picks it up automatically.
 
-(This is a starting template, not legal advice — have it reviewed if the
+(It's a starting template, not legal advice — have it reviewed if the
 product takes off.)
 
 ---
@@ -174,13 +158,15 @@ From a clean checkout, so no local junk gets in:
 git clone https://github.com/YOUR-USER/frequency freq-release
 cd freq-release
 rm -rf .git                      # buyers get code, not your git history
-# add LICENSE.txt from section 6 here
 zip -r frequency-source-v1.0.zip . -x "*/node_modules/*" -x "*/dist/*"
 ```
 
+`LICENSE.txt` is already tracked in the repo, so the clone brings it along —
+no manual step needed.
+
 Sanity checklist before uploading:
 
-- [ ] `LICENSE.txt` present (section 6)
+- [ ] `LICENSE.txt` present at the root
 - [ ] No `.env` files inside (only `.env.example` — verify: `unzip -l frequency-source-v1.0.zip | grep .env`)
 - [ ] No `node_modules/`, `dist/`, or `.git/`
 - [ ] `BUYER-SETUP.md` at the root — it's the first thing buyers should open
