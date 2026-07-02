@@ -148,7 +148,7 @@ Copy the long hex string it prints. **This is your `SESSION_SECRET`.** Save it.
    | Key | Value |
    |---|---|
    | `DATABASE_URL` | your Neon connection string from Part 2 |
-   | `SESSION_SECRET` | the hex string from step 3a |
+   | `SESSION_SECRET` | auto-generated if you used the Blueprint (`render.yaml`); otherwise the hex string from step 3a |
    | `FRONTEND_ORIGIN` | *(fill in after Part 4 — your Vercel URL)* |
    | `GOOGLE_CLIENT_ID` | *(optional — see Part 5)* |
 
