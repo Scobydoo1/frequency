@@ -196,6 +196,16 @@ export default function App() {
     }
   }, [draft, user, showName, prompt, reveal.text, reveal.name]);
 
+  /* leave a signal straight from the search — no lock required. The reveal is
+   * cleared so the constellation and journal record a give-only encounter. */
+  const skipToGive = useCallback(() => {
+    setReveal({ text: "", ago: "", id: "", real: false });
+    setReported(false);
+    setFriendReq("");
+    radioRef.current?.silenceStatic();
+    setScreen("give");
+  }, []);
+
   const onReport = useCallback(async () => {
     setReported(true);
     if (reveal.id) await reportSignal(prompt, reveal.id);
@@ -435,6 +445,9 @@ export default function App() {
         <div className="kicker">TONIGHT, EVERYONE IS TUNED TO ONE THING</div>
         <div className="prompt-line">{prompt.label}.</div>
         <div className="hint">move your light · find another · hold close to lock on</div>
+        <button className="linklike dim banner-skip" onClick={skipToGive}>
+          or leave your signal now — no need to wait
+        </button>
       </div>
 
       {/* LOCKED reveal */}
@@ -509,13 +522,15 @@ export default function App() {
           <div className="count">{fmtCount(count)}</div>
           <div className="count-sub">people have tuned to “{prompt.label}” tonight</div>
           <div className="pair">
-            <div className="pair-row them">
-              <span className="dot them-dot"></span>
-              <span className="pair-msg">
-                “{reveal.text}”
-                <span className="pair-name">— {reveal.name || "a stranger"}</span>
-              </span>
-            </div>
+            {reveal.text && (
+              <div className="pair-row them">
+                <span className="dot them-dot"></span>
+                <span className="pair-msg">
+                  “{reveal.text}”
+                  <span className="pair-name">— {reveal.name || "a stranger"}</span>
+                </span>
+              </div>
+            )}
             <div className="pair-row you">
               <span className="dot you-dot"></span>
               <span className="pair-msg">
