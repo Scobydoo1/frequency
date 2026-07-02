@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getSignals, addSignal } from "../lib/store.js";
+import { getSignals, addSignal, recordFound, getEchoes, markEchoesSeen } from "../lib/store.js";
 
 // no DATABASE_URL in test env → curated fallback path
 describe("store (no-db fallback)", () => {
@@ -27,6 +27,16 @@ describe("store (no-db fallback)", () => {
     const r = await addSignal("letgo", "a new true thing");
     expect(r.persisted).toBe(false);
     expect(typeof r.id).toBe("string");
+  });
+
+  it("degrades echoes gracefully without a database", async () => {
+    expect(await recordFound("letgo", "sig-abc", null)).toEqual({ ok: false });
+    expect(await getEchoes("nightowl")).toEqual({ echoes: [], news: 0 });
+    expect(await markEchoesSeen("nightowl")).toEqual({ ok: false });
+  });
+
+  it("rejects finds for unknown prompts", async () => {
+    expect(await recordFound("does-not-exist", "sig-abc")).toEqual({ ok: false });
   });
 
   it("gives each prompt its own count", async () => {

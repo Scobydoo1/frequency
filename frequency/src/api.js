@@ -52,6 +52,24 @@ export async function fetchSignals(prompt, n = 7) {
   }
 }
 
+/** A reveal happened — echo the find back to the author. Fire-and-forget;
+ *  seeds have no author, and credentials let the server skip self-finds. */
+export async function markFound(prompt, id) {
+  if (!id || String(id).startsWith("seed-")) return;
+  try {
+    await withTimeout(
+      (signal) => fetch(`${API_BASE}/api/signals/found`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ prompt: prompt.id, id }),
+        signal,
+      }),
+      TIMEOUT_MS
+    );
+  } catch { /* echoes are best-effort */ }
+}
+
 export async function submitSignal(prompt, text, showName = false) {
   try {
     return await withTimeout(

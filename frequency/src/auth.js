@@ -84,6 +84,20 @@ export async function recoverWithGoogle(idToken, newPassword) {
   })) || { ok: false, reason: "unreachable" };
 }
 
+/* ---------- echoes: your broadcast history + who found it ---------- */
+
+/** { echoes:[{id,promptId,text,ago,found,news}], news } — the signals you
+ *  signed and how many strangers found each. news = unread finds. */
+export async function getEchoes() {
+  const r = await call("/api/signals/mine");
+  return r && Array.isArray(r.echoes) ? r : { echoes: [], news: 0 };
+}
+
+/** Acknowledge every echo (clears the "new" badge). */
+export async function markEchoesSeen() {
+  return (await call("/api/signals/mine/seen", { method: "POST", body: "{}" })) || { ok: false };
+}
+
 /** { friends: [...], requests: [...] } */
 export async function getFriends() {
   const r = await call("/api/friends");

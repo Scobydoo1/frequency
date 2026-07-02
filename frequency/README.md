@@ -22,7 +22,8 @@ npm run dev           # http://localhost:5173 — proxies /api to the server abo
 ```
 
 Messages still work with no backend running at all (local fallback payloads);
-accounts/friends require the server + `DATABASE_URL`.
+accounts, friends and echoes (who found the signals you signed) require the
+server + `DATABASE_URL`.
 
 ## Test
 
@@ -226,7 +227,10 @@ ID, and it'll add it.
 **Backend (Express on Render, `server/`)**
 - `routes/signals.js` — `GET /api/signals` (real + curated messages for a prompt,
   plus the nightly count); `POST /api/signals` (moderate + store a new message,
-  identity server-resolved from the session).
+  identity server-resolved from the session); `POST /api/signals/found` (a reveal
+  happened — echo it back to the author); `GET /api/signals/mine` +
+  `POST /api/signals/mine/seen` (the signed-in player's broadcast history and
+  its unread-finds badge, the **your echoes** panel).
 - `routes/report.js` — `POST /api/report` (remove a flagged message).
 - `routes/auth.js` — register/login/logout (callsign + password) plus the Google
   sign-in/recovery flow.
