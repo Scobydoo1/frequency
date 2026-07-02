@@ -2,16 +2,18 @@
  * radio sound, the signal backend, and the local journal. */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FrequencyField } from "./engine/field-engine.js";
-import { PALETTE, STRANGER_COUNT, MOTION, TRACKS, nightlyPrompt, nightlyTrack, trackBySlug, paletteFor } from "./content.js";
-import { fetchSignals, submitSignal, reportSignal, fetchHealth, fmtCount } from "./api.js";
+import { PROMPTS, PALETTE, STRANGER_COUNT, MOTION, TRACKS, nightlyPrompt, nightlyTrack, trackBySlug, paletteFor } from "./content.js";
+import { fetchSignals, submitSignal, reportSignal, markFound, fetchHealth, fmtCount } from "./api.js";
 import { Radio } from "./sound.js";
 import { loadJournal, addEncounter, formatWhen, starPosition } from "./journal.js";
 import {
   me, register, login, logout, getFriends, friendAction, lastTunedLabel,
-  loginWithGoogle, completeGoogleSignup,
+  getEchoes, markEchoesSeen, loginWithGoogle, completeGoogleSignup,
 } from "./auth.js";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+const promptLabel = (id) => PROMPTS.find((p) => p.id === id)?.label || id;
 
 /* the page chrome follows the field's palette */
 function applyCssPalette(pal) {
@@ -62,6 +64,8 @@ export default function App() {
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [social, setSocial] = useState({ friends: [], requests: [] });
   const [friendReq, setFriendReq] = useState(""); // "", "sent", or an error note
+  const [echoesOpen, setEchoesOpen] = useState(false);
+  const [echoData, setEchoData] = useState({ echoes: [], news: 0 });
 
   const canvasRef = useRef(null);
   const fieldRef = useRef(null);
@@ -69,6 +73,7 @@ export default function App() {
   const freqRef = useRef(null);
   const screenRef = useRef(screen); screenRef.current = screen;
   const assignedRef = useRef(assigned); assignedRef.current = assigned;
+  const promptRef = useRef(prompt); promptRef.current = prompt;
   const statusRef = useRef("searching");
   const countRef = useRef(0); // last seen tuned-tonight count, for echo pulses
 
@@ -98,6 +103,7 @@ export default function App() {
       setReveal({ ...sig, freq: f.currentFreq().toFixed(1) });
       setReported(false);
       setFriendReq("");
+      if (sig.real) markFound(promptRef.current, sig.id); // echo back to the author
       radio.chime();
       radio.silenceStatic();
       setTimeout(() => {
@@ -111,6 +117,12 @@ export default function App() {
     return () => f.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* unread finds → intro badge; covers page load and every sign-in path */
+  useEffect(() => {
+    if (user) getEchoes().then(setEchoData);
+    else setEchoData({ echoes: [], news: 0 });
+  }, [user]);
 
   const beginTuning = useCallback(async () => {
     radioRef.current?.start();
@@ -268,6 +280,15 @@ export default function App() {
     setSocial(await getFriends());
   }, []);
 
+  /* opening the panel is the acknowledgement: the rows keep their "new" marks
+   * for this viewing, the server clears them for next time */
+  const openEchoes = useCallback(async () => {
+    setEchoesOpen(true);
+    const d = await getEchoes();
+    setEchoData(d);
+    if (d.news > 0) markEchoesSeen();
+  }, []);
+
   const onFriendAct = useCallback(async (action, callsign) => {
     await friendAction(action, callsign);
     setSocial(await getFriends());
@@ -378,6 +399,11 @@ export default function App() {
               <button className="linklike" onClick={openJournal}>your constellation</button>
               {authAvailable && user && (
                 <button className="linklike" onClick={openFriends}>your frequencies</button>
+              )}
+              {authAvailable && user && (
+                <button className="linklike" onClick={openEchoes}>
+                  your echoes{echoData.news > 0 && <span className="echo-badge">{echoData.news} new</span>}
+                </button>
               )}
               {authAvailable && (user ? (
                 <button className="linklike dim" onClick={doLogout}>{user.callsign} · sign out</button>
@@ -640,6 +666,43 @@ export default function App() {
               </div>
             )}
             <button className="btn ghost" onClick={() => setFriendsOpen(false)}>close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ECHOES — the signals you've signed, and who found them */}
+      {echoesOpen && (
+        <div className="journal-overlay" onClick={(e) => { if (e.target.classList.contains("journal-overlay")) setEchoesOpen(false); }}>
+          <div className="journal">
+            <div className="kicker">YOUR ECHOES</div>
+            <p className="journal-sub">every signal you've signed — and how often strangers found it.</p>
+            {echoData.echoes.length === 0 ? (
+              <p className="journal-empty">
+                Nothing signed yet. Leave a signal broadcast as {user?.callsign || "your callsign"},
+                and you'll hear back here when a stranger finds it.
+              </p>
+            ) : (
+              <div className="freq-list">
+                {echoData.echoes.map((e) => (
+                  <div className="freq-row" key={e.id}>
+                    <div className="freq-head">
+                      <span className="dot you-dot"></span>
+                      <span className="freq-when">{promptLabel(e.promptId)} · {e.ago}</span>
+                      {e.news > 0 && <span className="echo-badge">{e.news} new</span>}
+                    </div>
+                    <div className="freq-signal">“{e.text}”</div>
+                    <div className="echo-found" data-found={e.found > 0}>
+                      {e.found === 0
+                        ? "still drifting — no one has found it yet"
+                        : e.found === 1
+                          ? "found by one stranger"
+                          : `found by ${e.found} strangers`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn ghost" onClick={() => setEchoesOpen(false)}>close</button>
           </div>
         </div>
       )}

@@ -124,6 +124,60 @@ export async function addSignal(promptId, text, name = null) {
   }
 }
 
+/** A player locked onto this signal — count the find so the author hears an
+ *  echo back. Self-finds don't count. Best-effort. Returns { ok }. */
+export async function recordFound(promptId, id, finder = null) {
+  if (!hasDb() || !VALID.has(promptId)) return { ok: false };
+  try {
+    const res = await getPool().query(
+      "update signals set found_count = found_count + 1 where id = $1 and prompt_id = $2 and name is distinct from $3",
+      [id, promptId, finder]
+    );
+    return { ok: res.rowCount > 0 };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** The signals you signed, newest first, each with how many strangers found
+ *  it. news = total finds not yet acknowledged via markEchoesSeen. Anonymous
+ *  posts stay anonymous everywhere, so only signed signals can echo back. */
+export async function getEchoes(callsign) {
+  if (!hasDb()) return { echoes: [], news: 0 };
+  try {
+    const res = await getPool().query(
+      `select id, prompt_id, text, ts, found_count, found_seen
+       from signals where name = $1 order by ts desc limit 50`,
+      [callsign]
+    );
+    const echoes = res.rows.map((r) => ({
+      id: r.id,
+      promptId: r.prompt_id,
+      text: r.text,
+      ago: relAgo(Number(r.ts)),
+      found: r.found_count,
+      news: Math.max(0, r.found_count - r.found_seen),
+    }));
+    return { echoes, news: echoes.reduce((sum, e) => sum + e.news, 0) };
+  } catch {
+    return { echoes: [], news: 0 };
+  }
+}
+
+/** The author opened the panel — mark every echo as heard. */
+export async function markEchoesSeen(callsign) {
+  if (!hasDb()) return { ok: false };
+  try {
+    await getPool().query(
+      "update signals set found_seen = found_count where name = $1",
+      [callsign]
+    );
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** Remove a reported message by id. Returns { removed }. */
 export async function removeSignal(promptId, id) {
   if (!hasDb() || !VALID.has(promptId)) return { removed: false };
